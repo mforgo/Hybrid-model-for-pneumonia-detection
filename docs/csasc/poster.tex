@@ -110,7 +110,7 @@ To address current hardware constraints, we designed a multi-stage pipeline:
 1.  \textbf{Classical Feature Extraction:} Input X-ray ($224 \times 224$) processed by \textbf{ResNet-50} (headless) to extract a 2048-dimensional feature vector.
     
 2.  \textbf{Dimensionality Reduction (PCA):} Compressed to \textbf{64 components} to fit the 6-qubit system ($2^6 = 64$) \cite{SharmaEnc2023}.
-
+//
 3.  \textbf{Quantum Classification (VQC):} Data is mapped to quantum states via \textbf{Amplitude Encoding} and processed by a parameterized circuit (Ansatz).
 
 \begin{center}\vspace{1cm}
