@@ -1,0 +1,236 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% Hybrid QML Pneumonia Detection Poster
+% Theme: NTC UWB (New Technologies Research Centre)
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\documentclass[a0,portrait]{a0poster}
+
+\usepackage{multicol} 
+\columnsep=60pt % Slightly wider separation for a cleaner look
+\columnseprule=0pt 
+
+\usepackage[svgnames]{xcolor} 
+\usepackage{graphicx} 
+\graphicspath{{figures/}} 
+\usepackage{booktabs} 
+\usepackage[font=small,labelfont=bf]{caption} 
+\usepackage{amsfonts, amsmath, amsthm, amssymb} 
+\usepackage{wrapfig} 
+\usepackage[labelformat=empty]{caption}
+\usepackage{fontawesome} 
+
+% --- NTC / UWB FONTS ---
+% NTC uses modern Sans-Serif fonts (Helvetica/Arial style)
+\usepackage[scaled]{helvet}
+\renewcommand\familydefault{\sfdefault} 
+\usepackage[T1]{fontenc}
+
+% --- NTC / UWB COLOR PALETTE ---
+% UWB Blue (Official): approx RGB 0, 94, 184
+\definecolor{UWBBlue}{RGB}{0, 94, 184}
+% NTC Cyan/Light Blue Accent: approx RGB 0, 174, 239
+\definecolor{NTCCyan}{RGB}{0, 174, 239}
+% Dark Grey for text
+\definecolor{TechGrey}{RGB}{60, 60, 60}
+
+\begin{document}
+
+%----------------------------------------------------------------------------------------
+%	HEADER
+%----------------------------------------------------------------------------------------
+
+\begin{minipage}[b]{0.75\linewidth}
+    % Title in UWB Blue
+    \VeryHuge \color{UWBBlue} \textbf{Hybrid Quantum-Classical Neural Network for Pneumonia Detection in the NISQ Era}
+    \color{TechGrey}\\[0.6cm] 
+    
+    \Large \textbf{
+    \authorName{Michal Forgó}
+    }\\[0.4cm]
+    
+    \large \textbf{
+    \authorAffil{}{Secondary School of Informatics and Financial Services, Plzeň, Czech Republic}
+    }\\[0.2cm]
+    
+    % Highlight NTC mention
+    \large \textbf{Supervisor: Bc. Jan Boháč | Tech Support: \textcolor{UWBBlue}{NTC UWB} (New Technologies Research Centre)}
+    \begin{center}
+        \large \textbf{School Year: 2025/2026 | Matura Project}
+    \end{center}
+\end{minipage}
+%
+\begin{minipage}[b]{0.25\linewidth}
+    \begin{center}
+        % PLACEHOLDER: Upload 'school_logo.png' or UWB logo
+        % \includegraphics[width=12cm]{school_logo.png}
+        \Huge \textbf{\textcolor{UWBBlue}{[LOGO]}}
+    \end{center}
+\end{minipage}
+
+\vspace{1cm}
+
+% Horizontal line in NTC Cyan to separate header
+\noindent\textcolor{NTCCyan}{\rule{\linewidth}{4pt}}
+\vspace{1cm}
+
+\begin{multicols}{2} 
+
+%----------------------------------------------------------------------------------------
+%	1. INTRODUCTION
+%----------------------------------------------------------------------------------------
+
+\color{UWBBlue}
+\section*{1. Introduction \& Objectives}
+\color{TechGrey}
+
+\noindent
+Pneumonia remains a leading cause of global mortality. While Deep Learning models like \textbf{ResNet} have revolutionized diagnostics \cite{He2016}, they face efficiency limits. This project investigates \textbf{Quantum Machine Learning (QML)} as a solution for the \textbf{NISQ} (Noisy Intermediate-Scale Quantum) era \cite{Schuld2018}.
+
+\vspace{0.5em}
+\textbf{Main Objectives:}
+\begin{itemize}
+    \item \textbf{\textcolor{UWBBlue}{Hybrid Architecture:}} Combine a classical CNN (feature extractor) with a Variational Quantum Classifier (VQC).
+    \item \textbf{\textcolor{UWBBlue}{Efficiency:}} Test if quantum layers can reduce parameters while maintaining accuracy.
+    \item \textbf{\textcolor{UWBBlue}{Benchmarking:}} Compare against classical methods on Chest X-Ray data \cite{Kundu2021}.
+\end{itemize}
+
+%----------------------------------------------------------------------------------------
+%	2. METHODOLOGY
+%----------------------------------------------------------------------------------------
+
+\color{UWBBlue}
+\section*{2. Methodology: The Hybrid Pipeline}
+\color{TechGrey}
+
+\noindent
+To address current hardware constraints, we designed a multi-stage pipeline:
+
+1.  \textbf{Classical Feature Extraction:} Input X-ray ($224 \times 224$) processed by \textbf{ResNet-50} (headless) to extract a 2048-dimensional feature vector.
+    
+2.  \textbf{Dimensionality Reduction (PCA):} Compressed to \textbf{64 components} to fit the 6-qubit system ($2^6 = 64$) \cite{SharmaEnc2023}.
+
+3.  \textbf{Quantum Classification (VQC):} Data is mapped to quantum states via \textbf{Amplitude Encoding} and processed by a parameterized circuit (Ansatz).
+
+\begin{center}\vspace{1cm}
+    % PLACEHOLDER: Upload 'pipeline.png'
+    \fcolorbox{UWBBlue}{white}{\begin{minipage}{0.9\linewidth}\centering \vspace{3cm} \Huge [Figure 4.1: Architecture] \vspace{3cm} \end{minipage}}
+    \captionof{figure}{\textbf{Figure 1.} The hybrid architecture: ResNet-50 $\to$ PCA $\to$ VQC.}
+\end{center}
+
+%----------------------------------------------------------------------------------------
+%	3. MATHEMATICAL MODEL
+%----------------------------------------------------------------------------------------
+
+\color{UWBBlue}
+\section*{3. Mathematical Formulation}
+\color{TechGrey}
+
+\noindent
+\textbf{Amplitude Encoding:} The feature vector $x \in \mathbb{R}^{64}$ is mapped to the amplitudes of a 6-qubit state $|\psi\rangle$:
+\begin{equation}
+    |\psi(x)\rangle = \sum_{i=0}^{63} x_i |i\rangle \quad \text{where} \quad \sum |x_i|^2 = 1
+\end{equation}
+
+\noindent
+\textbf{VQC Prediction:} The classification score is the expectation value of the Pauli-Z operator after applying the unitary ansatz $U(\theta)$ \cite{Mitarai2018}:
+\begin{equation}
+    f(x, \theta) = \langle \psi_x | U^\dagger(\theta) Z_0 U(\theta) | \psi_x \rangle
+\end{equation}
+
+%----------------------------------------------------------------------------------------
+%	4. RESULTS: EFFICIENCY
+%----------------------------------------------------------------------------------------
+
+\color{UWBBlue}
+\section*{4. Results: Parameter Efficiency}
+\color{TechGrey}
+
+\noindent
+A key finding is the extreme reduction in model complexity. The quantum circuit requires significantly fewer trainable parameters than the classical dense layers.
+
+\begin{center}
+\begin{tabular}{l c c}
+\toprule
+\textbf{\textcolor{UWBBlue}{Model Component}} & \textbf{Classical (MLP)} & \textbf{Hybrid (VQC)} \\
+\midrule
+Trainable Parameters & \textbf{164,865} & \textbf{108} \\
+Reduction Factor & 1x & \textbf{\textcolor{NTCCyan}{1527x Lower}} \\
+\bottomrule
+\end{tabular}
+\captionof{table}{\textbf{Table 1.} Comparison of trainable parameters in the decision layer.}
+\end{center}
+
+%----------------------------------------------------------------------------------------
+%	5. RESULTS: PERFORMANCE
+%----------------------------------------------------------------------------------------
+
+\color{UWBBlue}
+\section*{5. Results: Diagnostic Performance}
+\color{TechGrey}
+
+\noindent
+Tested on 624 images (Guangzhou dataset). We observed a trade-off between efficiency and raw accuracy, partly due to the \textbf{Barren Plateaus} problem common in QML \cite{McClean2018}.
+
+\begin{itemize}
+    \item \textbf{Sensitivity (Recall):} \textbf{80.00\%} – Successfully detects most positive cases.
+    \item \textbf{Accuracy:} 71.63\% (Hybrid) vs 85.90\% (Classical).
+    \item \textbf{Specificity:} 57.69\% – impacted by \textbf{Dataset Shift} (Train: 74\% Pneumonia vs Test: 62\%) \cite{Zech2018}.
+\end{itemize}
+
+\begin{center}\vspace{1cm}
+    % PLACEHOLDER: Upload 'confusion_matrix.png' & 'roc_curve.png'
+    \fcolorbox{UWBBlue}{white}{\begin{minipage}{0.45\linewidth}\centering \vspace{3cm} \Huge [Conf. Matrix] \vspace{3cm} \end{minipage}}
+    \hfill
+    \fcolorbox{UWBBlue}{white}{\begin{minipage}{0.45\linewidth}\centering \vspace{3cm} \Huge [ROC Curve] \vspace{3cm} \end{minipage}}
+    \captionof{figure}{\textbf{Figure 2.} Left: Confusion Matrix. Right: ROC Curve (AUC=0.74).}
+\end{center}
+
+%----------------------------------------------------------------------------------------
+%	6. CONCLUSION
+%----------------------------------------------------------------------------------------
+
+\color{UWBBlue}
+\section*{6. Conclusion}
+\color{TechGrey}
+
+\noindent
+This thesis demonstrated a functional hybrid pipeline. While the classical ResNet remains superior in accuracy, the Hybrid QML model achieved viable results (AUC 0.74) with \textbf{1527x fewer parameters}, proving the potential of quantum circuits for memory-constrained medical applications.
+
+%----------------------------------------------------------------------------------------
+%	REFERENCES
+%----------------------------------------------------------------------------------------
+
+\color{UWBBlue}
+\section*{References}
+\color{TechGrey}
+
+\small
+\begin{thebibliography}{99} 
+
+    \bibitem{Kundu2021}
+    Kundu, R. et al. (2021). Pneumonia Detection in Chest X-ray using Deep Learning. \textit{PLOS ONE}, 16(9).
+    
+    \bibitem{He2016}
+    He, K. et al. (2016). Deep Residual Learning for Image Recognition. \textit{CVPR}, 770-778.
+
+    \bibitem{Schuld2018}
+    Schuld, M., \& Petruccione, F. (2018). Supervised Learning with Quantum Computers. \textit{Springer}.
+
+    \bibitem{Mitarai2018}
+    Mitarai, K. et al. (2018). Quantum Circuit Learning. \textit{Physical Review A}, 98(3).
+
+    \bibitem{SharmaEnc2023}
+    Sharma, A. (2023). Survey of Encoding Techniques for Quantum Machine Learning. \textit{Cybernetics and Physics}.
+
+    \bibitem{Zech2018}
+    Zech, J. R. et al. (2018). Variable generalization performance of a deep learning model to detect pneumonia. \textit{PLOS Medicine}.
+
+    \bibitem{McClean2018}
+    McClean, J. R. et al. (2018). Barren plateaus in quantum neural network training landscapes. \textit{Nature Comm.}, 9(1).
+
+\end{thebibliography}
+
+\end{multicols}
+\end{document}
