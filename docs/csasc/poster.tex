@@ -92,7 +92,7 @@
 \begin{minipage}[b]{0.34\linewidth}
   \begin{center}
     % Larger logos (tune widths as needed)
-    \includegraphics[width=13cm,keepaspectratio]{\SchoolLogo}\\[0.6cm]
+    \includegraphics[width=13cm,keepaspectratio]{\SchoolLogo}\\
     \includegraphics[width=13cm,keepaspectratio]{\NTCLogo}
   \end{center}
 \end{minipage}
@@ -160,7 +160,7 @@ Dimensionality reduction & 2048-D & PCA (linear) & 64-D vector & 0 (fixed) \\
 Quantum classification & 64-D & VQC \(U(\theta)\) & score \([0,1]\) & 108 \\
 \bottomrule
 \end{tabular}
-\captionof{table}{\textbf{Table 1.} Hybrid pipeline architecture and parameter counts.}
+\captionof{table}{\textbf{} Hybrid pipeline architecture and parameter counts.}
 \end{center}
 
 \vspace{0.2cm}
@@ -180,7 +180,7 @@ Quantum classification & 64-D & VQC \(U(\theta)\) & score \([0,1]\) & 108 \\
 \draw[pipelinearrow] (pca) -- (vqc);
 \draw[pipelinearrow] (vqc) -- (out);
 \end{tikzpicture}
-\captionof{figure}{\textbf{Figure 1.} Implemented hybrid pipeline diagram (TikZ).}
+\captionof{figure}{\textbf{} Implemented hybrid pipeline diagram (TikZ).}
 \end{center}
 
 \vspace{0.2cm}
@@ -265,7 +265,7 @@ Classical MLP (1 hidden: 128) & 164,865 & 1\(\times\) \\
 VQC (6 qubits, 4 layers) & 108 & \textbf{\textcolor{NTCPurple2}{1527\(\times\)}} \\
 \bottomrule
 \end{tabular}
-\captionof{table}{\textbf{Table 2.} Parameter reduction in the quantum decision head.}
+\captionof{table}{\textbf{} Parameter reduction in the quantum decision head.}
 \end{center}
 
 \vspace{0.2cm}
@@ -297,7 +297,7 @@ Accuracy & 71.63\% & 85.90\% \\
 \textbf{AUC} & \textbf{0.74} & \textbf{0.88} \\
 \bottomrule
 \end{tabular}
-\captionof{table}{\textbf{Table 3.} Diagnostic performance and efficiency--accuracy trade-off.}
+\captionof{table}{\textbf{} Diagnostic performance and efficiency--accuracy trade-off.}
 \end{center}
 
 \vspace{0.15cm}
@@ -308,9 +308,12 @@ Accuracy & 71.63\% & 85.90\% \\
   \item Specificity drops under dataset shift + training difficulty (barren plateaus) \cite{McClean2018, Zech2018}.
 \end{itemize}
 
-\begin{center}\vspace{0.2cm}
-\includegraphics[width=0.92\columnwidth]{../../media/results_graph.png}
-\captionof{figure}{\textbf{Figure 2.} ROC curve and confusion matrix (your provided plot).}
+\begin{center}
+\begin{minipage}{\columnwidth}
+  \centering
+  \includegraphics[width=0.92\columnwidth]{../../media/results_graph.png}\\[-2mm]
+  \captionof{figure}{\textbf{Figure 2.} ROC curve and confusion matrix.}
+\end{minipage}
 \end{center}
 
 %----------------------------------------------------------------------------------------
@@ -334,7 +337,7 @@ Effect of PCA compression on performance:
 128 & 7 & 0.73 & 147 \\
 \bottomrule
 \end{tabular}
-\captionof{table}{\textbf{Table 4.} PCA/qubit trade-off vs AUC.}
+\captionof{table}{\textbf{} PCA/qubit trade-off vs AUC.}
 \end{center}
 
 \vspace{0.15cm}
