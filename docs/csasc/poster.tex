@@ -1,5 +1,7 @@
 % Hybrid QML Pneumonia Detection Poster (CSASC 2026)
+
 % Theme: NTC UWB (New Technologies Research Centre)
+
 % Enhanced: more scientific & comprehensive + NTC colors + large logos + TikZ architecture scheme
 
 \documentclass[a0,portrait]{a0poster}
@@ -28,10 +30,11 @@
 % ------------------------------------------------------------
 % NTC COLOR PALETTE (derived from provided NTC logo image)
 % ------------------------------------------------------------
-\definecolor{NTCPurple}{RGB}{151, 13, 157}     % primary accent
-\definecolor{NTCPurple2}{RGB}{179, 94, 184}    % secondary accent
-\definecolor{NTCLight}{RGB}{231, 210, 233}     % light tint for boxes
-\definecolor{NTCGrey}{RGB}{60, 60, 60}         % body text
+
+\definecolor{NTCPurple}{RGB}{151, 13, 157} % primary accent
+\definecolor{NTCPurple2}{RGB}{179, 94, 184} % secondary accent
+\definecolor{NTCLight}{RGB}{231, 210, 233} % light tint for boxes
+\definecolor{NTCGrey}{RGB}{60, 60, 60} % body text
 \definecolor{LightGrey}{RGB}{240, 240, 240}
 
 % Backwards-compatible aliases (so existing \color{UWBBlue} still works)
@@ -42,12 +45,14 @@
 % ------------------------------------------------------------
 % Logos (edit paths if needed)
 % ------------------------------------------------------------
+
 \newcommand{\SchoolLogo}{../../media/infis.png}
 \newcommand{\NTCLogo}{../../media/ntc.png} % <-- your uploaded logo file
 
 % ------------------------------------------------------------
-% Box styles (FIXED: braces properly closed)
+% Box styles
 % ------------------------------------------------------------
+
 \tcbset{
   colback=white,
   colframe=NTCPurple2,
@@ -59,6 +64,7 @@
 % ------------------------------------------------------------
 % TikZ styles
 % ------------------------------------------------------------
+
 \tikzset{
   pipelinebox/.style={
     draw=NTCPurple2,
@@ -78,23 +84,22 @@
 \begin{document}
 
 %----------------------------------------------------------------------------------------
-% HEADER (logos larger + NTC style)
+% HEADER
 %----------------------------------------------------------------------------------------
-\begin{minipage}[b]{0.66\linewidth}
-  \VeryHuge \color{NTCPurple} \textbf{Hybrid Quantum--Classical Neural Network for Pneumonia Detection in the NISQ Era}
-  \color{TechGrey}\\[0.55cm]
 
-  \Large \textbf{Michal Forgó$^{1,2}$}\\[0.15cm]
-  \large $^1$\textbf{Secondary School of Informatics and Financial Services (SŠINFIS), Plzeň, CZ}\\
-  $^2$\textbf{New Technologies Research Centre (NTC), University of West Bohemia, Pilsen, CZ}\\[0.2cm]
-  \large \textbf{Supervisor: Bc. Jan Boháč \quad|\quad CSASC 2026 \quad|\quad Matura Project 2025/2026}
+\begin{minipage}[b]{0.66\linewidth}
+\VeryHuge \color{NTCPurple} \textbf{Hybrid Quantum--Classical Neural Network for Pneumonia Detection in Chest X-Rays}\\[0.5cm]
+\color{TechGrey}\\[0.55cm]
+\Large \textbf{Michal Forgó$^{1,2}$}\\[0.15cm]
+\large $^1$\textbf{Secondary School of Informatics and Financial Services (SŠINFIS), Plzeň, CZ}\\
+$^2$\textbf{New Technologies Research Centre (NTC), University of West Bohemia, Pilsen, CZ}\\[0.2cm]
+\large \textbf{Supervisor: Bc. Jan Boháč \quad|\quad CSASC 2026 \quad|\quad Matura Project 2025/2026}
 \end{minipage}
 \begin{minipage}[b]{0.34\linewidth}
-  \begin{center}
-    % Larger logos (tune widths as needed)
-    \includegraphics[width=13cm,keepaspectratio]{\SchoolLogo}\\
-    \includegraphics[width=13cm,keepaspectratio]{\NTCLogo}
-  \end{center}
+\begin{center}
+\includegraphics[width=13cm,keepaspectratio]{\SchoolLogo}\\
+\includegraphics[width=13cm,keepaspectratio]{\NTCLogo}
+\end{center}
 \end{minipage}
 
 \vspace{0.6cm}
@@ -106,6 +111,7 @@
 %----------------------------------------------------------------------------------------
 % 1. INTRODUCTION & CONTEXT
 %----------------------------------------------------------------------------------------
+
 \color{UWBBlue}\section*{1. Introduction \& Scientific Context}
 \color{TechGrey}
 
@@ -113,9 +119,11 @@
 \textbf{Clinical motivation.} Pneumonia causes \(\sim\)2.5 million deaths annually. Manual radiologist interpretation is subjective; deep learning (ResNet, DenseNet) achieves \(>85\%\) diagnostic accuracy but requires massive parameter counts (164.8k+ per decision layer).
 
 \vspace{0.25cm}
+
 \textbf{Quantum computing opportunity.} NISQ devices (6--100 qubits) offer parameter-efficient learning via Variational Quantum Algorithms (VQA). However, their effectiveness in medical imaging remains underexplored, especially hybrid architectures combining classical feature extraction with quantum classification \cite{Schuld2018, Cerezo2021}.
 
 \vspace{0.25cm}
+
 \begin{tcolorbox}
 \textbf{\textcolor{NTCPurple}{Research hypothesis:}}
 A quantum decision layer (VQC with \(\sim\)100 parameters) can approach classical discrimination while reducing memory footprint, enabling edge/IoT deployment.
@@ -124,25 +132,28 @@ A quantum decision layer (VQC with \(\sim\)100 parameters) can approach classica
 %----------------------------------------------------------------------------------------
 % 2. RELATED WORK
 %----------------------------------------------------------------------------------------
+
 \color{UWBBlue}\section*{2. Literature Review}
 \color{TechGrey}
 
 \noindent
 Recent advances in QML and medical imaging:
+
 \begin{itemize}[leftmargin=0.9em,itemsep=0.15em,topsep=0.1em]
-  \item \textbf{Classical baseline:} ResNet for image recognition \cite{He2016}.
-  \item \textbf{Quantum encoding:} encoding strategies and trade-offs \cite{SharmaEnc2023}.
-  \item \textbf{VQC foundations:} quantum circuit learning \cite{Mitarai2018}.
-  \item \textbf{Barren plateaus:} vanishing gradients in PQCs \cite{McClean2018}.
-  \item \textbf{Dataset shift:} pneumonia generalization issues across sites \cite{Zech2018}.
+\item \textbf{Classical baseline:} ResNet for image recognition \cite{He2016}.
+\item \textbf{Quantum encoding:} encoding strategies and trade-offs \cite{SharmaEnc2023}.
+\item \textbf{VQC foundations:} quantum circuit learning \cite{Mitarai2018}.
+\item \textbf{Barren plateaus:} vanishing gradients in PQCs \cite{McClean2018}.
+\item \textbf{Dataset shift:} pneumonia generalization issues across sites \cite{Zech2018}.
 \end{itemize}
 
 \noindent
-\textbf{Gap:} Limited empirical studies quantifying the efficiency--accuracy trade-off of CNN$\rightarrow$VQC hybrids under realistic distribution shifts.
+\textbf{Gap:} Limited empirical studies quantifying the efficiency--accuracy trade-off of CNN\(\rightarrow\)VQC hybrids under realistic distribution shifts.
 
 %----------------------------------------------------------------------------------------
 % 3. METHODOLOGY: ARCHITECTURE
 %----------------------------------------------------------------------------------------
+
 \color{UWBBlue}\section*{3. Methodology: Hybrid Architecture}
 \color{TechGrey}
 
@@ -164,17 +175,14 @@ Quantum classification & 64-D & VQC \(U(\theta)\) & score \([0,1]\) & 108 \\
 \end{center}
 
 \vspace{0.2cm}
-% ------------------------------
-% Implemented architecture scheme (TikZ)
-% ------------------------------
+
 \begin{center}\vspace{0.2cm}
 \begin{tikzpicture}[node distance=10mm]
-\node[pipelinebox] (img) {Chest X-ray\\\textbf{224$\times$224}};
+\node[pipelinebox] (img) {Chest X-ray\\\textbf{224\(\times\)224}};
 \node[pipelinebox, below=of img] (cnn) {\textbf{ResNet-50}\\(headless)\\2048-D features};
-\node[pipelinebox, below=of cnn] (pca) {\textbf{PCA}\\2048 $\rightarrow$ 64\\(\(2^6=64\))};
+\node[pipelinebox, below=of cnn] (pca) {\textbf{PCA}\\2048 \(\rightarrow\) 64\\(\(2^6=64\))};
 \node[pipelinebox, below=of pca] (vqc) {\textbf{VQC}\\6 qubits\\108 params};
 \node[pipelinebox, below=of vqc] (out) {Output\\\textbf{P(neumonia)}};
-
 \draw[pipelinearrow] (img) -- (cnn);
 \draw[pipelinearrow] (cnn) -- (pca);
 \draw[pipelinearrow] (pca) -- (vqc);
@@ -184,14 +192,16 @@ Quantum classification & 64-D & VQC \(U(\theta)\) & score \([0,1]\) & 108 \\
 \end{center}
 
 \vspace{0.2cm}
+
 \noindent
-\textbf{Feature extraction:} ResNet-50 without classification head outputs a 2048-D feature vector. \\
-\textbf{PCA compression:} 2048 \(\rightarrow\) 64 dimensions to match 6-qubit amplitude encoding. \\
+\textbf{Feature extraction:} ResNet-50 without classification head outputs a 2048-D feature vector.\\
+\textbf{PCA compression:} 2048 \(\rightarrow\) 64 dimensions to match 6-qubit amplitude encoding.\\
 \textbf{Quantum classifier:} 6-qubit VQC with a shallow ansatz and 108 trainable parameters.
 
 %----------------------------------------------------------------------------------------
 % 4. MATHEMATICAL FORMULATION
 %----------------------------------------------------------------------------------------
+
 \color{UWBBlue}\section*{4. Quantum Circuit: Theory}
 \color{TechGrey}
 
@@ -208,117 +218,123 @@ f(x,\theta) = \langle \psi(x) | U^\dagger(\theta)\, Z_0\, U(\theta) | \psi(x) \r
 \end{equation}
 
 \noindent
-Probability mapping: \(\sigma(f)=(f+1)/2\). \\
-Loss: binary cross-entropy, optimized via parameter-shift gradients \cite{Mitarai2018}.
+Probability mapping: \(\sigma(f)=(f+1)/2\).\\
+Loss: weighted mean squared error, optimized via simulator autodiff.
 
 %----------------------------------------------------------------------------------------
 % 5. EXPERIMENTAL SETUP
 %----------------------------------------------------------------------------------------
+
 \color{UWBBlue}\section*{5. Experimental Setup}
 \color{TechGrey}
 
 \noindent
-\textbf{Dataset:} Guangzhou Chest X-ray dataset (624 images: 312 pneumonia, 312 normal).
+\textbf{Dataset:} Guangzhou Chest X-ray dataset (5856 images in total).
 
 \begin{itemize}[leftmargin=0.9em,itemsep=0.1em,topsep=0.1em]
-  \item \textbf{Train/Test:} 70/30 split (437 train, 187 test).
-  \item \textbf{Shift:} Train 74\% pneumonia vs Test 62\% pneumonia (robustness stress test).
+\item \textbf{Split:} 4185 train, 1047 validation, 624 test.
+\item \textbf{Shift:} Train \(\approx 74\%\) pneumonia vs Test 62.5\% pneumonia (robustness stress test).
 \end{itemize}
 
 \noindent
 \textbf{Hyperparameters:}
 \begin{itemize}[leftmargin=0.9em,itemsep=0.1em,topsep=0.1em]
-  \item Optimizer: Adam (lr = 0.01, \(\beta_1=0.9\), \(\beta_2=0.999\))
-  \item Epochs: 100, batch size: 16
-  \item PCA dims: 64 (ablation: 8, 16, 32, 64, 128)
-  \item Circuit depth: 4 layers
+\item Optimizer: Adam (lr = 0.001, \(\beta_1=0.9\), \(\beta_2=0.999\))
+\item Epochs: 50, batch size: 16
+\item PCA dims: 64 (ablation: 8, 16, 32, 64, 128)
+\item Circuit depth: 6 layers (3 parameters \(\times\) 6 qubits \(\times\) 6 layers = 108)
 \end{itemize}
 
 \noindent
-\textbf{Simulation:} IBM Qiskit (statevector simulator, noise-free).
+\textbf{Simulation:} PennyLane (lightning.gpu backend, noise-free).
 
-% FIXED: \colorbox braces properly closed
 \begin{center}
 \colorbox{LightGrey}{
-  \begin{minipage}{0.95\columnwidth}
-    \small
-    \textbf{Reproducibility:} Code available at \texttt{github.com/michalforgo/qml-pneumonia} \\
-    \textbf{Dataset:} Guangzhou CXR dataset, preprocessing following \cite{Kundu2021}
-  \end{minipage}
+\begin{minipage}{0.95\columnwidth}
+\small
+\textbf{Reproducibility:} Code available at \texttt{github.com/michalforgo/qml-pneumonia}\\
+\textbf{Dataset:} Guangzhou CXR dataset, preprocessing following \cite{Kundu2021}
+\end{minipage}
 }
 \end{center}
 
 %----------------------------------------------------------------------------------------
 % 6. RESULTS: EFFICIENCY
 %----------------------------------------------------------------------------------------
+
 \color{UWBBlue}\section*{6. Results: Parameter Efficiency}
 \color{TechGrey}
 
 \noindent
 \textbf{Parameter comparison:}
+
 \begin{center}
 \begin{tabular}{lrr}
 \toprule
 \textbf{Decision layer} & \textbf{\# Parameters} & \textbf{Reduction} \\
 \midrule
 Classical MLP (1 hidden: 128) & 164,865 & 1\(\times\) \\
-VQC (6 qubits, 4 layers) & 108 & \textbf{\textcolor{NTCPurple2}{1527\(\times\)}} \\
+VQC (6 qubits, 6 layers) & 108 & \textbf{\textcolor{NTCPurple2}{1527\(\times\)}} \\
 \bottomrule
 \end{tabular}
 \captionof{table}{\textbf{} Parameter reduction in the quantum decision head.}
 \end{center}
 
 \vspace{0.2cm}
+
 \noindent
 This reduction enables:
 \begin{itemize}[leftmargin=0.9em,itemsep=0.1em,topsep=0.1em]
-  \item Smaller memory footprint for the decision head.
-  \item Faster optimization (fewer trainable parameters).
-  \item Potential for edge deployment (subject to hardware feasibility).
+\item Smaller memory footprint for the decision head.
+\item Faster optimization (fewer trainable parameters).
+\item Potential for edge deployment (subject to hardware feasibility).
 \end{itemize}
 
 %----------------------------------------------------------------------------------------
 % 7. RESULTS: PERFORMANCE
 %----------------------------------------------------------------------------------------
+
 \color{UWBBlue}\section*{7. Results: Diagnostic Performance}
 \color{TechGrey}
 
 \noindent
-Test set (187 images, 62\% pneumonia prevalence):
+Test set (624 images, 62.5\% pneumonia prevalence):
 
 \begin{center}
 \begin{tabular}{lrr}
 \toprule
 \textbf{Metric} & \textbf{Hybrid (VQC)} & \textbf{Classical (MLP)} \\
 \midrule
-Sensitivity (recall) & 80.00\% & 92.11\% \\
-Specificity & 57.69\% & 76.92\% \\
+Sensitivity (recall) & 80.00\% & 97.95\% \\
+Specificity & 57.69\% & 70.51\% \\
 Accuracy & 71.63\% & 85.90\% \\
-\textbf{AUC} & \textbf{0.74} & \textbf{0.88} \\
+\textbf{AUC} & \textbf{0.74} & \textbf{0.91} \\
 \bottomrule
 \end{tabular}
 \captionof{table}{\textbf{} Diagnostic performance and efficiency--accuracy trade-off.}
 \end{center}
 
 \vspace{0.15cm}
+
 \noindent
 \textbf{Observations:}
 \begin{itemize}[leftmargin=0.9em,itemsep=0.1em,topsep=0.1em]
-  \item VQC reaches AUC 0.74 with 1527\(\times\) fewer parameters in the head.
-  \item Specificity drops under dataset shift + training difficulty (barren plateaus) \cite{McClean2018, Zech2018}.
+\item VQC reaches AUC 0.74 with 1527\(\times\) fewer parameters in the head.
+\item Specificity drops under dataset shift and PQC training difficulty (barren plateaus) \cite{McClean2018, Zech2018}.
 \end{itemize}
 
 \begin{center}
 \begin{minipage}{\columnwidth}
-  \centering
-  \includegraphics[width=0.92\columnwidth]{../../media/results_graph.png}\\[-2mm]
-  \captionof{figure}{\textbf{Figure 2.} ROC curve and confusion matrix.}
+\centering
+\includegraphics[width=0.92\columnwidth]{../../media/results_graph.png}\\[-2mm]
+\captionof{figure}{\textbf{Figure 2.} ROC curve and confusion matrix.}
 \end{minipage}
 \end{center}
 
 %----------------------------------------------------------------------------------------
 % 8. ABLATION STUDY
 %----------------------------------------------------------------------------------------
+
 \color{UWBBlue}\section*{8. Ablation: PCA Dimensionality}
 \color{TechGrey}
 
@@ -341,24 +357,27 @@ Effect of PCA compression on performance:
 \end{center}
 
 \vspace{0.15cm}
+
 \noindent
 Optimal here: 6 qubits (64 dims). Larger systems can become harder to train due to barren plateaus \cite{McClean2018}.
 
 %----------------------------------------------------------------------------------------
 % 9. LIMITATIONS & MITIGATION
 %----------------------------------------------------------------------------------------
+
 \color{UWBBlue}\section*{9. Limitations \& Discussion}
 \color{TechGrey}
 
 \noindent
 \textbf{1) Barren plateaus.} Gradients can vanish in PQCs; mitigation includes ansatz design and training strategies \cite{McClean2018, Cerezo2021}.\\
-\textbf{2) Dataset shift.} Prevalence differences can reduce specificity; mitigation includes calibration/domain adaptation \cite{Zech2018}.\\
+\textbf{2) Dataset shift.} Prevalence differences can reduce specificity; mitigation includes calibration and domain adaptation \cite{Zech2018}.\\
 \textbf{3) Hardware noise.} Real devices have decoherence and gate errors; mitigation includes error mitigation techniques.\\
 \textbf{4) PCA loss.} Compression may discard useful variance; alternative encodings could be explored \cite{SharmaEnc2023}.
 
 %----------------------------------------------------------------------------------------
 % 10. CONCLUSION
 %----------------------------------------------------------------------------------------
+
 \color{UWBBlue}\section*{10. Conclusion \& Future Work}
 \color{TechGrey}
 
@@ -366,16 +385,18 @@ Optimal here: 6 qubits (64 dims). Larger systems can become harder to train due 
 This study demonstrates a functional hybrid quantum--classical pipeline for pneumonia detection. The VQC decision layer achieves \textbf{AUC 0.74 with 1527\(\times\) parameter reduction}, supporting the case for parameter-efficient quantum decision heads in constrained settings.
 
 \vspace{0.15cm}
+
 \textbf{Future directions:}
 \begin{itemize}[leftmargin=0.9em,itemsep=0.1em,topsep=0.1em]
-  \item Run on real hardware with error mitigation.
-  \item Evaluate on larger datasets (CheXpert / NIH).
-  \item Improve robustness to dataset shift (calibration, balanced training).
+\item Run on real hardware with error mitigation.
+\item Evaluate on larger datasets (CheXpert / NIH).
+\item Improve robustness to dataset shift (calibration, balanced training).
 \end{itemize}
 
 %----------------------------------------------------------------------------------------
 % REFERENCES
 %----------------------------------------------------------------------------------------
+
 \color{UWBBlue}\section*{References}
 \color{TechGrey}\small
 
