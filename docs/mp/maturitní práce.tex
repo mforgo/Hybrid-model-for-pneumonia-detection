@@ -311,7 +311,7 @@ Právě tato pravděpodobnostní povaha je zásadním rozdílem oproti determini
 \subsection{Blochova sféra}
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.4\textwidth]{../media/bloch_sphere.png} 
+    \includegraphics[width=0.4\textwidth]{../../media/bloch_sphere.png} 
     \caption{Geometrická reprezentace stavu qubitu na Blochově sféře.}
     \label{fig:bloch}
 \end{figure}
@@ -514,7 +514,7 @@ Pro trénování a~testování modelu byl využit veřejně dostupný dataset \t
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.8\textwidth]{../media/dataset_showcase.png}
+    \includegraphics[width=0.8\textwidth]{../../media/dataset_showcase.png}
     \caption{Ukázka dat z~datasetu. Vlevo: snímek bez nálezu (Normal). Vpravo: snímky s~pneumonií.}
     \label{fig:dataset_sample}
 \end{figure}
@@ -523,7 +523,7 @@ Celkem dataset zahrnuje 5856 snímků, které jsou v~původní verzi rozděleny 
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=1.0\textwidth]{../media/dataset_split.png}
+    \includegraphics[width=1.0\textwidth]{../../media/dataset_split.png}
     \caption{Původní rozdělení datasetu podle tříd a~sad (train/val/test).}
     \label{fig:dataset_distribution}
 \end{figure}
@@ -539,7 +539,7 @@ Snímky jsou kategorizovány do~dvou tříd: \textit{Normal} (zdravý nález) a~
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.8\textwidth]{../media/dataset_quality.png}
+    \includegraphics[width=0.8\textwidth]{../../media/dataset_quality.png}
     \caption{Rozložení velikosti snímků v~datasetu. Různorodost rozlišení potvrzuje nutnost jednotné normalizace vstupů.}
     \label{fig:dataset_size_distribution}
 \end{figure}
@@ -910,7 +910,7 @@ Trénování hybridního modelu probíhalo po dobu 50 epoch bez aktivování ear
 
 \begin{figure}[h]
    \centering
-   \includegraphics[width=1.0\textwidth]{../media/loss_graph.png} 
+   \includegraphics[width=1.0\textwidth]{../../media/loss_graph.png} 
    \caption{Vývoj chybové funkce (MSE) a~přesnosti hybridního modelu. Konvergence dosažena po 50 epochách (trénovací čas: 8145s / 135min).}
    \label{fig:learning_curve}
 \end{figure}
@@ -953,7 +953,7 @@ Detailní rozbor chyb odhaluje medicinsky významné vzorce:
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=1.0\textwidth]{../media/results_graph.png} 
+    \includegraphics[width=1.0\textwidth]{../../media/results_graph.png} 
     \caption{Matice záměn a~ROC křivka (AUC=0.7445).}
     \label{fig:confusion_matrix}
 \end{figure}
@@ -1072,6 +1072,21 @@ Experimentální výsledky ukázaly, že klasický model ResNet-50 dosahuje na t
 Z hlediska praktických přínosů práce lze za nejdůležitější považovat tři oblasti. Zaprvé, práce demonstruje kompletní návrh a~implementaci hybridní kvantově–klasické architektury na skutečných biomedicínských datech a~může tak sloužit jako referenční příklad pro další studenty a~výzkumníky v~oblasti QML. Zadruhé, systematická analýza omezení – včetně vlivu nevyvážených dat, doménového posunu, volby ansatzu a~výpočetních nároků simulace – poskytuje realistický pohled na to, kde se dnes nachází praktická použitelnost kvantového strojového učení v~medicíně. Zatřetí, práce otevírá konkrétní cesty pro další výzkum, jako je nasazení na reálný kvantový hardware, využití pokročilých metod mitigace šumu, automatizovaná optimalizace hyperparametrů či zkoumání alternativních kvantových architektur a~ensemble přístupů.
 
 Celkově lze říci, že i~když hybridní model v~této studii nedosáhl lepší klasifikační výkonnosti než pečlivě nastavený klasický ResNet-50, splnil svůj hlavní účel jako experimentální platforma pro zkoumání možností a~limitů hybridních kvantově–klasických neuronových sítí v~éře NISQ. Výsledky potvrzují, že kvantová výhoda v~takto náročné obrazové úloze není za současného stavu hardwaru a~při omezeném počtu qubitů samozřejmostí, ale zároveň ukazují, že kvantové obvody mohou hrát roli parametricky úsporných klasifikátorů a~inspirují další práci na návrhu architektur, které budou lépe využívat specifické silné stránky kvantových procesorů. v~tomto smyslu představuje práce příspěvek k~probíhající diskusi o~reálné využitelnosti kvantového strojového učení v~medicínské diagnostice a~vytváří pevný základ pro budoucí experimenty i~prohloubení spolupráce mezi oblastí kvantových technologií a~klinickou praxí.
+
+\section{Shrnutí}
+\subsection{Shrnutí projektu}
+
+V rámci maturitní práce byl navržen, implementován a otestován hybridní kvantově‑klasický model pro detekci pneumonie z rentgenových snímků hrudníku, čímž bylo naplněno zadání zaměřené na praktickou aplikaci kvantového strojového učení v medicínské diagnostice. Navržená pipeline kombinuje extrakci příznaků pomocí sítě ResNet‑50, redukci dimenze metodou PCA a variabilní kvantový obvod (VQC) s amplitudovým kódováním na 6 qubitech, který slouží jako klasifikátor s výrazně menším počtem parametrů než referenční klasický model.
+
+Experimenty ukázaly, že čistě klasický model dosahuje vyšší přesnosti (přibližně 86~\% accuracy, F1 $\approx 0{,}90$, AUC $\approx 0{,}91$), zatímco hybridní model se pohybuje okolo 72~\% accuracy a AUC $\approx 0{,}74$, avšak s přibližně tisíckrát menším počtem trénovatelných parametrů v rozhodovací části. Přestože se nepodařilo dosáhnout srovnatelné klasifikační výkonnosti s plně klasickým ResNet‑50, projekt splnil cíl ověřit praktickou použitelnost hybridního kvantově‑klasického přístupu na reálných biomedicínských datech a identifikoval klíčová omezení současné NISQ éry (omezený počet qubitů, redukce dimenze, dataset shift mezi trénovací a testovací sadou).
+
+\subsection{Project Summary}
+
+This thesis designed, implemented, and evaluated a hybrid quantum‑classical model for pneumonia detection from chest X‑ray images, thus fulfilling the assignment focused on a practical application of quantum machine learning in medical diagnostics. The proposed pipeline combines feature extraction with a ResNet‑50 backbone, dimensionality reduction via PCA, and a variational quantum circuit (VQC) with amplitude encoding on 6 qubits, which acts as a classifier with a dramatically reduced number of trainable parameters compared to the reference classical model.
+
+The experiments showed that the purely classical model achieves higher performance (about 86~\% accuracy, F1 $\approx 0.90$, AUC $\approx 0.91$), while the hybrid model reaches around 72~\% accuracy and AUC $\approx 0.74$, but with roughly a thousand times fewer trainable parameters in the decision layer. Although the original hypothesis of achieving comparable classification performance to the fully classical ResNet‑50 was not confirmed, the project met its goal of demonstrating a complete hybrid quantum‑classical pipeline on real biomedical data and highlighted key limitations of the current NISQ era (limited qubit count, feature compression, and dataset shift between training and test sets).
+
+
 
 % ================= LITERATURA [cite: 151-190] =================
 \printbibliography[title={Seznam použité literatury}, heading=bibintoc]
