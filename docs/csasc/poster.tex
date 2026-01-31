@@ -88,12 +88,13 @@
 %----------------------------------------------------------------------------------------
 
 \begin{minipage}[b]{0.66\linewidth}
-\VeryHuge \color{NTCPurple} \textbf{Hybrid Quantum--Classical Neural Network for Pneumonia Detection in Chest X-Rays}\\[0.5cm]
+\VeryHuge \color{NTCPurple} \textbf{Hybrid Quantum--Classical Neural Network for Pneumonia Detection in}\\[0.5cm]
+\VeryHuge \color{NTCPurple} \textbf{Chest X-Rays}\\[0.8cm]
 \color{TechGrey}\\[0.55cm]
 \Large \textbf{Michal Forgó$^{1,2}$}\\[0.15cm]
 \large $^1$\textbf{Secondary School of Informatics and Financial Services (SŠINFIS), Plzeň, CZ}\\
 $^2$\textbf{New Technologies Research Centre (NTC), University of West Bohemia, Pilsen, CZ}\\[0.2cm]
-\large \textbf{Supervisor: Bc. Jan Boháč \quad|\quad CSASC 2026 \quad|\quad Maturity project 2025/2026}
+\large \textbf{Supervisor: Bc. Jan Boháč \quad|\quad CSASC 2026 \quad|\quad Graduation project 2025/2026}
 \end{minipage}
 \begin{minipage}[b]{0.34\linewidth}
 \begin{center}
@@ -116,13 +117,9 @@ $^2$\textbf{New Technologies Research Centre (NTC), University of West Bohemia, 
 \color{TechGrey}
 
 \noindent
-\textbf{Clinical motivation.} Pneumonia causes \(\sim\)2.5 million deaths annually. Manual radiologist interpretation is subjective; deep learning (ResNet, DenseNet) achieves \(>85\%\) diagnostic accuracy but requires massive parameter counts (164.8k+ per decision layer).
+\textbf{Clinical motivation.} Pneumonia causes \(\sim\)2.5 million deaths annually. Manual radiologist interpretation is subjective; deep learning (ResNet, DenseNet) achieves \(>85\%\) diagnostic accuracy but requires massive parameter counts (164.8k+ per decision layer). \vspace{0.25cm}
 
-\vspace{0.25cm}
-
-\textbf{Quantum computing opportunity.} NISQ devices (6--100 qubits) offer parameter-efficient learning via Variational Quantum Algorithms (VQA). However, their effectiveness in medical imaging remains underexplored, especially hybrid architectures combining classical feature extraction with quantum classification \cite{Schuld2018, Cerezo2021}.
-
-\vspace{0.25cm}
+\textbf{Quantum computing opportunity.} NISQ devices (6--100 qubits) offer parameter-efficient learning via Variational Quantum Algorithms (VQA). However, their effectiveness in medical imaging remains underexplored, especially hybrid architectures combining classical feature extraction with quantum classification \cite{Schuld2018, Cerezo2021}. \vspace{0.25cm}
 
 \begin{tcolorbox}
 \textbf{\textcolor{NTCPurple}{Research hypothesis:}}
@@ -159,7 +156,6 @@ Recent advances in QML and medical imaging:
 
 \noindent
 \textbf{Design rationale.} We separate \textit{feature learning} (classical) from \textit{decision making} (quantum) to stay within NISQ constraints.
-
 \begin{center}
 \footnotesize
 \begin{tabular}{lcccc}
@@ -230,7 +226,6 @@ Loss: weighted mean squared error, optimized via simulator autodiff.
 
 \noindent
 \textbf{Dataset:} Guangzhou Chest X-ray dataset (5856 images in total).
-
 \begin{itemize}[leftmargin=0.9em,itemsep=0.1em,topsep=0.1em]
 \item \textbf{Split:} 4185 train, 1047 validation, 624 test.
 \item \textbf{Shift:} Train \(\approx 74\%\) pneumonia vs Test 62.5\% pneumonia (robustness stress test).
@@ -252,7 +247,7 @@ Loss: weighted mean squared error, optimized via simulator autodiff.
 \colorbox{LightGrey}{
 \begin{minipage}{0.95\columnwidth}
 \small
-\textbf{Reproducibility:} Code available at \texttt{github.com/michalforgo/qml-pneumonia}\\
+\textbf{Reproducibility:} Code available at \texttt{github.com/mforgo/}\\
 \textbf{Dataset:} Guangzhou CXR dataset, preprocessing following \cite{Kundu2021}
 \end{minipage}
 }
@@ -331,6 +326,17 @@ Accuracy & 71.63\% & 85.90\% \\
 \end{minipage}
 \end{center}
 
+% --- ADDED HEATMAP IMAGE HERE ---
+\begin{center}
+\begin{minipage}{\columnwidth}
+\centering
+% Assumes heatmap.jpg is in the same folder as the .tex file
+\includegraphics[width=0.95\columnwidth]{../../media/heatmap.png}\\[-2mm]
+\captionof{figure}{\textbf{Figure 3.} Interpretability: GradCAM visualization (right) confirms the model focuses on lung opacity rather than background artifacts.}
+\end{minipage}
+\end{center}
+% --------------------------------
+
 %----------------------------------------------------------------------------------------
 % 8. ABLATION STUDY
 %----------------------------------------------------------------------------------------
@@ -382,9 +388,7 @@ Optimal here: 6 qubits (64 dims). Larger systems can become harder to train due 
 \color{TechGrey}
 
 \noindent
-This study demonstrates a functional hybrid quantum--classical pipeline for pneumonia detection. The VQC decision layer achieves \textbf{AUC 0.74 with 1527\(\times\) parameter reduction}, supporting the case for parameter-efficient quantum decision heads in constrained settings.
-
-\vspace{0.15cm}
+This study demonstrates a functional hybrid quantum--classical pipeline for pneumonia detection. The VQC decision layer achieves \textbf{AUC 0.74 with 1527\(\times\) parameter reduction}, supporting the case for parameter-efficient quantum decision heads in constrained settings. \vspace{0.15cm}
 
 \textbf{Future directions:}
 \begin{itemize}[leftmargin=0.9em,itemsep=0.1em,topsep=0.1em]
@@ -397,34 +401,45 @@ This study demonstrates a functional hybrid quantum--classical pipeline for pneu
 % REFERENCES
 %----------------------------------------------------------------------------------------
 
-\color{UWBBlue}\section*{References}
+%----------------------------------------------------------------------------------------
+% REFERENCES
+%----------------------------------------------------------------------------------------
+
+% We redefine the automatic header name to include the color command
+\renewcommand{\refname}{\textcolor{UWBBlue}{References}}
+
+% Set the text style for the bibliography items
 \color{TechGrey}\small
 
 \begin{thebibliography}{99}
 
-\bibitem{Kundu2021}
-Kundu, R. et al. (2021). Pneumonia Detection in Chest X-ray using Deep Learning. \textit{PLOS ONE}, 16(9), e0256630.
-
-\bibitem{He2016}
-He, K., Zhang, X., Ren, S., \& Sun, J. (2016). Deep Residual Learning for Image Recognition. \textit{IEEE CVPR}, 770--778.
-
+% REORDERED BY APPEARANCE IN TEXT
+% 1. Intro
 \bibitem{Schuld2018}
 Schuld, M., \& Petruccione, F. (2018). Supervised Learning with Quantum Computers. \textit{Springer}.
 
-\bibitem{Mitarai2018}
-Mitarai, K., Negoro, M., Kitagawa, M., \& Fujii, K. (2018). Quantum Circuit Learning. \textit{Phys. Rev. A}, 98(3), 032309.
+\bibitem{Cerezo2021}
+Cerezo, M., Sone, A., Volkoff, T., Cincio, L., \& Coles, P. J. (2021). Cost-Function-Dependent Barren Plateaus in Shallow Parametrized Quantum Circuits. \textit{Nature Communications}, 12(1), 1791.
+
+% 2. Lit Review
+\bibitem{He2016}
+He, K., Zhang, X., Ren, S., \& Sun, J. (2016). Deep Residual Learning for Image Recognition. \textit{IEEE CVPR}, 770--778.
 
 \bibitem{SharmaEnc2023}
 Sharma, A., et al. (2023). Survey of Encoding Techniques for Quantum Machine Learning. \textit{Cybernetics and Physics}, 12(1), 45--67.
 
-\bibitem{Zech2018}
-Zech, J. R., et al. (2018). Variable Generalization Performance of a Deep Learning Model to Detect Pneumonia. \textit{PLOS Medicine}, 15(11), e1002683.
+\bibitem{Mitarai2018}
+Mitarai, K., Negoro, M., Kitagawa, M., \& Fujii, K. (2018). Quantum Circuit Learning. \textit{Phys. Rev. A}, 98(3), 032309.
 
 \bibitem{McClean2018}
 McClean, J. R., Boixo, S., Smelyanskiy, V. N., Babbush, R., \& Neven, H. (2018). Barren plateaus in quantum neural network training landscapes. \textit{Nature Communications}, 9(1), 4812.
 
-\bibitem{Cerezo2021}
-Cerezo, M., Sone, A., Volkoff, T., Cincio, L., \& Coles, P. J. (2021). Cost-Function-Dependent Barren Plateaus in Shallow Parametrized Quantum Circuits. \textit{Nature Communications}, 12(1), 1791.
+\bibitem{Zech2018}
+Zech, J. R., et al. (2018). Variable Generalization Performance of a Deep Learning Model to Detect Pneumonia. \textit{PLOS Medicine}, 15(11), e1002683.
+
+% 3. Experimental Setup
+\bibitem{Kundu2021}
+Kundu, R. et al. (2021). Pneumonia Detection in Chest X-ray using Deep Learning. \textit{PLOS ONE}, 16(9), e0256630.
 
 \end{thebibliography}
 

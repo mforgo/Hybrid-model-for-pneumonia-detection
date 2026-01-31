@@ -1,0 +1,235 @@
+\documentclass[aspectratio=169, 10pt]{beamer}
+
+% ==============================================================================
+% 1. PACKAGES & FONTS
+% ==============================================================================
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{helvet} % Matches the poster's font choice 
+\usepackage[english]{babel}
+\usepackage{booktabs} % For nice tables
+\usepackage{tikz}
+\usepackage{tcolorbox}
+\usepackage{graphicx}
+\usepackage{multicol}
+
+% Set default font family to sans-serif (Helvetica)
+\renewcommand{\familydefault}{\sfdefault}
+
+% ==============================================================================
+% 2. COLOR PALETTE (Extracted from poster.tex )
+% ==============================================================================
+\definecolor{NTCPurple}{RGB}{151, 13, 157}   % Primary accent
+\definecolor{NTCPurple2}{RGB}{179, 94, 184}  % Secondary accent
+\definecolor{NTCLight}{RGB}{231, 210, 233}   % Light tint
+\definecolor{NTCGrey}{RGB}{60, 60, 60}       % Body text
+\definecolor{LightGrey}{RGB}{240, 240, 240}  % Backgrounds
+
+% ==============================================================================
+% 3. BEAMER THEME CUSTOMIZATION
+% ==============================================================================
+
+% Remove navigation symbols
+\setbeamertemplate{navigation symbols}{}
+
+% Color mappings
+\setbeamercolor{structure}{fg=NTCPurple}
+\setbeamercolor{normal text}{fg=NTCGrey}
+\setbeamercolor{title}{fg=NTCPurple}
+\setbeamercolor{subtitle}{fg=NTCPurple2}
+\setbeamercolor{frametitle}{fg=NTCPurple}
+\setbeamercolor{section in toc}{fg=NTCPurple}
+
+% Itemize bullets (Square/Circle to match scientific style)
+\setbeamertemplate{itemize item}{\scriptsize\raise1.25pt\hbox{\color{NTCPurple}$\blacksquare$}}
+\setbeamertemplate{itemize subitem}{\scriptsize\raise1.25pt\hbox{\color{NTCPurple2}$\blacktriangleright$}}
+\setbeamertemplate{itemize subsubitem}{\tiny\raise1.5pt\hbox{\color{NTCGrey}$\bullet$}}
+
+% Custom Block Style (Matches the poster's tcolorbox )
+\setbeamercolor{block title}{bg=NTCPurple2, fg=white}
+\setbeamercolor{block body}{bg=NTCLight!35, fg=NTCGrey}
+\setbeamertemplate{blocks}[rounded][shadow=false]
+
+% Footer (Simple with page number)
+\setbeamertemplate{footline}{
+  \hbox{
+  \begin{beamercolorbox}[wd=\paperwidth,ht=2.25ex,dp=1ex,right]{date in head/foot}
+    \usebeamerfont{date in head/foot}\insertshortauthor\hspace*{2em}
+    \insertframenumber{} / \inserttotalframenumber\hspace*{2ex} 
+  \end{beamercolorbox}}
+  \vskip0pt
+}
+
+% Header (Horizontal line in NTCPurple2)
+\setbeamertemplate{headline}{
+  \vskip10pt
+  \hspace{0.5cm}\textcolor{NTCPurple2}{\rule{0.95\paperwidth}{2pt}}
+}
+
+% ==============================================================================
+% 4. METADATA
+% ==============================================================================
+\title{Hybrid Quantum-Classical Neural Network\\for Pneumonia Detection}
+\subtitle{CSASC 2026 Graduation Project}
+\author[M. Forgó]{Michal Forgó\inst{1,2} \\ \small{Supervisor: Bc. Jan Boháč}}
+\institute{
+  \inst{1} Secondary School of Informatics and Financial Services (SŠINFIS)\\
+  \inst{2} New Technologies Research Centre (NTC), UWB
+}
+\date{\today}
+
+% ==============================================================================
+% 5. PRESENTATION CONTENT
+% ==============================================================================
+\begin{document}
+
+% --- TITLE SLIDE ---
+{
+\setbeamertemplate{headline}{} % Hide header on title slide
+\begin{frame}
+  \begin{columns}
+    \column{0.7\textwidth}
+      \vspace{1cm}
+      {\Huge \textbf{\textcolor{NTCPurple}{Hybrid Quantum-Classical Neural Network}}\\[0.2cm] 
+      {\Large \textcolor{NTCGrey}{Pneumonia Detection in Chest X-Rays}}\\[1cm]
+      
+      \textbf{Michal Forgó}\\
+      \footnotesize \textit{University of West Bohemia \& SŠINFIS}\\[0.2cm]
+      
+      \textcolor{NTCPurple2}{\rule{5cm}{1pt}}
+      
+    \column{0.3\textwidth}
+      \centering
+      % PLACEHOLDERS FOR LOGOS
+      \includegraphics[width=0.8\linewidth, height=2cm, keepaspectratio]{example-image-a}\\ \vspace{0.5cm}
+      \includegraphics[width=0.8\linewidth, height=2cm, keepaspectratio]{example-image-b}
+  \end{columns}
+\end{frame}
+}
+
+% --- TOC SLIDE ---
+\begin{frame}{Overview}
+  \tableofcontents
+\end{frame}
+
+% --- SECTION 1 ---
+\section{Introduction \& Scientific Context}
+
+% Standard text slide
+\begin{frame}{Clinical Motivation & Context}
+  \begin{itemize}
+    \item \textbf{The Problem:} Pneumonia causes $\sim$2.5 million deaths annually[cite: 8].
+    \item \textbf{Current State:} Deep Learning (ResNet, DenseNet) achieves high accuracy ($>85\%$) but requires massive parameter counts ($164.8k+$ per layer)[cite: 9].
+    \item \textbf{The Opportunity:} NISQ quantum devices offer parameter-efficient learning via VQA[cite: 10].
+  \end{itemize}
+  
+  \vspace{0.5cm}
+  
+  % Custom block matching the poster style
+  \begin{block}{Research Hypothesis}
+    A quantum decision layer (VQC with $\sim$100 parameters) can approach classical discrimination while reducing memory footprint, enabling Edge/IoT deployment[cite: 12].
+  \end{block}
+\end{frame}
+
+% --- SECTION 2 ---
+\section{Methodology}
+
+% Two Column Slide with Table
+\begin{frame}{Hybrid Architecture Design}
+  \textbf{Design Rationale:} Separate feature learning (classical) from decision making (quantum).
+
+  \vspace{0.5cm}
+
+  \begin{columns}[T] % T aligns columns at the top
+    \column{0.5\textwidth}
+       \textbf{Pipeline Flow:}
+       \begin{enumerate}
+           \item \textbf{Input:} Chest X-Ray ($224 \times 224$).
+           \item \textbf{Feature Extraction:} ResNet-50 (frozen) $\rightarrow$ 2048-D vector.
+           \item \textbf{Compression:} PCA ($2048 \rightarrow 64$).
+           \item \textbf{Classification:} VQC (6 qubits, 108 params).
+       \end{enumerate}
+
+    \column{0.5\textwidth}
+      \centering
+      \footnotesize
+      \begin{tabular}{llc}
+        \toprule
+        \textbf{Stage} & \textbf{Operation} & \textbf{Params} \\
+        \midrule
+        Features & ResNet-50 & 0 (frozen) \\
+        Reduction & PCA & 0 (fixed) \\
+        \textbf{Decision} & \textbf{VQC (6-qubit)} & \textbf{108} \\
+        \bottomrule
+      \end{tabular}
+      \vspace{0.2cm}
+      \captionof{table}{Parameter counts [cite: 22]}
+  \end{columns}
+\end{frame}
+
+% --- SECTION 3 ---
+\section{Results}
+
+% Slide with Math/Equations
+\begin{frame}{Quantum Circuit Theory}
+  \textbf{Amplitude Encoding:}
+  Mapping vector $x \in \mathbb{R}^{64}$ to quantum state:
+  $$ |\psi(x)\rangle = \sum_{i=0}^{63} x_i |i\rangle \in \mathcal{H}_{2^6} $$
+  
+  \vspace{0.3cm}
+  
+  \textbf{VQC Prediction:}
+  Defined by the expectation value:
+  $$ f(x,\theta) = \langle \psi(x) | U^\dagger(\theta)\, Z_0\, U(\theta) | \psi(x) \rangle \in [-1,1] $$
+  
+  \vspace{0.3cm}
+  \small{Optimized via weighted mean squared error on simulator (PennyLane)[cite: 43].}
+\end{frame}
+
+% Comparison Slide
+\begin{frame}{Performance vs. Efficiency}
+  The VQC decision head achieves competitive results with massive parameter reduction.
+
+  \vspace{0.5cm}
+  
+  \begin{columns}
+      \column{0.5\textwidth}
+      \textbf{Parameter Efficiency:}
+      \begin{itemize}
+          \item Classical MLP: 164,865 params.
+          \item Quantum VQC: \textbf{108 params}.
+          \item \textcolor{NTCPurple}{\textbf{Reduction: 1527$\times$}}[cite: 58].
+      \end{itemize}
+      
+      \column{0.5\textwidth}
+      \textbf{Diagnostic Accuracy (AUC):}
+      \begin{itemize}
+          \item Classical MLP: 0.91 AUC.
+          \item Hybrid VQC: \textbf{0.74 AUC}[cite: 66].
+      \end{itemize}
+  \end{columns}
+  
+  \vspace{0.5cm}
+  \centering
+  \textit{Note: Specificity drops due to dataset shift and barren plateaus[cite: 69].}
+\end{frame}
+
+% --- END SLIDE ---
+{
+\setbeamertemplate{headline}{}
+\begin{frame}
+  \centering
+  \vspace{1cm}
+  \huge \textcolor{NTCPurple}{\textbf{Thank You for Your Attention}}
+  
+  \vspace{1cm}
+  \normalsize
+  \textbf{Questions?}
+  
+  \vspace{1.5cm}
+  \footnotesize
+  \textcolor{NTCGrey}{Contact: mforgo@example.com}
+\end{frame}
+}
+
+\end{document}
