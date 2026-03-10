@@ -97,7 +97,8 @@ top=25mm,
         \textbf{Autor:} \autor \\
         \textbf{Škola:} \skola \\
         \textbf{Kraj:} \kraj \\
-        \textbf{Konzultant:} \konzultant
+        \textbf{Konzultant:} \konzultant \\
+        \textbf{Rok:} \rok
     \end{flushleft}
 
     \begin{center}
@@ -591,6 +592,15 @@ Jako extraktor příznaků byla zvolena architektura \textbf{ResNet-50}, která 
 
 Každý rentgenový snímek tedy nejprve prochází výše uvedenou obrazovou transformací a~poté je zpracován modelem ResNet-50, který jej převede na kompaktní 2048-rozměrný vektor. Teprve \emph{tyto} vektory jsou následně vstupem do~klasické pipeline pro redukci dimenze (PCA) a~přípravu dat pro kvantový klasifikátor, nikoli původní obrazová data.
 
+Vektory příznaků z ResNet-50 jsou pro všechny snímky uloženy jako
+\texttt{.npy} soubory spolu s metadaty v CSV souboru
+\texttt{metadata.csv}, který obsahuje cestu k souboru, třídu a příslušnou
+sadu (\texttt{train/val/test}). Následná redukce dimenze a normalizace
+probíhá nad těmito uloženými vektory pomocí objektu
+\texttt{sklearn.Pipeline}, který postupně aplikuje standardizaci
+(\texttt{StandardScaler}), zvolenou metodu redukce (PCA) a \(L_2\)
+normalizaci pro přípravu dat ke kvantovému kódování.
+
 
 \subsection{Redukce dimenzionality: PCA}
 
@@ -784,13 +794,13 @@ tak slouží primárně jako analýza citlivosti modelu na volbu rozhodovacího 
 
 \subsubsection*{4.5.3 Hyperparametry a~optimalizace}
 
-Optimalizace navrženého řešení probíhala ve~dvou na sobě nezávislých krocích:
-(i) trénink kvantového klasifikátoru VQC v~rámci hybridního modelu s~fixovanou
-klasickou částí (ResNet-50 + PCA pipeline) a~(ii) trénink čistě klasického baseline
-klasifikátoru nad stejnými 64rozměrnými příznaky. v~obou případech byl použit
-optimalizační algoritmus Adam, avšak s~odlišným nastavením plánů učení a~chybových
-funkcí reflektujících rozdílný charakter výstupu kvantového obvodu a~sigmoidového
-klasického modelu.
+Optimalizace navrženého řešení probíhala ve dvou na sobě nezávislých krocích:
+(i) trénink kvantového klasifikátoru VQC v rámci hybridního modelu s fixovanou
+klasickou částí (ResNet-50 + PCA pipeline) a (ii) trénink čistě klasického
+baseline klasifikátoru nad stejnými 64rozměrnými příznaky. V obou případech byl
+použit optimalizační algoritmus Adam, avšak s odlišným nastavením chybových
+funkcí a plánů učení reflektujících rozdílný charakter výstupu kvantového obvodu
+a sigmoidového klasického modelu.
 
 \paragraph{Chybové funkce}
 
@@ -802,10 +812,9 @@ klasického modelu.
   \begin{equation}
     z_i = \langle Z_0 \rangle_i \in [-1,1],
   \end{equation}
-  \myequation{Výstup kvantového klasifikátoru VQC jako očekávaná hodnota Pauliho $Z$ operátoru.}
   která je následně interpretována jako skóre pneumonie po lineárním přemapování
-  na interval $[0,1]$ až ve~fázi vyhodnocení. Aby bylo možné přímo optimalizovat
-  kvantové parametry na výstupu v~intervalu $[-1,1]$, jsou binární labely
+  na interval $[0,1]$ až ve fázi vyhodnocení. Aby bylo možné přímo optimalizovat
+  kvantové parametry na výstupu v intervalu $[-1,1]$, jsou binární labely
   $y_i \in \{0,1\}$ nejprve převedeny na cílové hodnoty
   \begin{equation}
     t_i =
@@ -814,79 +823,80 @@ klasického modelu.
       +1, & y_i = 1 \;(\text{Pneumonia}),
     \end{cases}
   \end{equation}
-  \myequation{Převedení binárních labelů na cílové hodnoty v~intervalu $[-1,1]$ pro trénink VQC.}
-  a~používá se vážená střední kvadratická chyba
+  a používá se vážená střední kvadratická chyba
   \begin{equation}
     L_{\mathrm{QMSE}} = \frac{1}{N} \sum_{i=1}^{N} w(t_i)\,\bigl(z_i - t_i\bigr)^2.
   \end{equation}
-  \myequation{Vážená střední kvadratická chyba \(L_{\mathrm{QMSE}}\) pro kvantový klasifikátor s třídními vahami \(w(t_i)\).}
+  Váhy $w(t_i)$ jsou odvozeny z poměru tříd v trénovací sadě tak, aby byly chyby
+  na minoritní třídě \emph{Normal} penalizovány výrazněji a částečně tak
+  kompenzovaly nevyváženost dat.
+  
+  \item \textbf{Klasický baseline: vážená binární cross-entropy}
 
-  Váhy $w(t_i)$ jsou odvozeny z~poměru tříd v~trénovací sadě tak, aby byly chyby
-  na minoritní třídě \emph{Normal} penalizovány výrazněji a~kompenzovala se
-  výrazná nevyváženost dat (přibližně $74{,}2\,\%$ snímků s~pneumonií). Tato volba
-  MSE (namísto například BCE) je motivována plynulými gradienty v~prostoru
-  parametrů ansatzu a~dobrou podporou v~autograd backendu knihovny PennyLane.
-
-  \item \textbf{Klasický baseline: vážená Binary Cross-Entropy (BCE)}
-
-  Čistě klasický baseline model nad 64rozměrnými příznaky z~PCA vrací pro každý
-  vzorek pravděpodobnost pneumonie $\hat{p}_i \in [0,1]$ pomocí sigmoidové
-  výstupní neurony. Pro trénink je použita vážená binární cross–entropie
+  Referenční vícevrstvý perceptron (baseline) produkuje pro každý vzorek
+  pravděpodobnost $p_i \in [0,1]$ pomocí sigmoidové výstupní vrstvy. Pro jeho
+  trénink je použita vážená binární cross-entropy
   \begin{equation}
-    L_{\mathrm{WBCE}} = -\frac{1}{N} \sum_{i=1}^{N}
-      w(y_i)\,\bigl[
-        y_i \log(\hat{p}_i) +
-        (1-y_i)\,\log(1-\hat{p}_i)
-      \bigr],
+    L_{\mathrm{BCE}} = - \frac{1}{N} \sum_{i=1}^{N}
+    \bigl(
+      \alpha\, y_i \log p_i
+      + (1-\alpha)\,(1-y_i)\log(1-p_i)
+    \bigr),
   \end{equation}
-  \myequation{Vážená binární cross-entropie \(L_{\mathrm{WBCE}}\) používaná pro trénink klasického baseline modelu nad 64rozměrnými příznaky z~PCA.}
-  kde funkce $w(y_i)$ nastavuje vyšší váhu vzorkům třídy \emph{Normal}, aby se
-  zmírnil vliv nevyváženosti a~model nebyl příliš „přesvědčen“ o~přítomnosti
-  pneumonie. v~implementaci je použito jednoduché schéma vah $w(0) > w(1)$,
-  což vede ke snížení počtu falešně negativních případů pneumonie při zachování
-  rozumné specificity.
+  kde $\alpha \in (0,1)$ je váhový koeficient odvozený z relativního zastoupení
+  tříd tak, aby byly chyby na minoritní třídě \emph{Normal} zvýhodněny.
 \end{itemize}
 
-Na rozdíl od~původního návrhu není v~této práci minimalizována jediná sdílená
-kombinovaná ztráta $L = \alpha L_{\mathrm{QMSE}} + (1-\alpha)L_{\mathrm{WBCE}}$,
-ale kvantový a~klasický model jsou optimalizovány odděleně se svými vlastními
-chybovými funkcemi a~hyperparametry.
+\paragraph{Nastavení tréninku hybridního modelu (VQC)}
 
-\paragraph{Optimalizační hyperparametry a~plány učení}
-
-V obou tréninkových scénářích je použit společný základní soubor
+Kvantová část byla trénována nad pevně extrahovanými příznaky z ResNet-50 a
+PCA pipeline. Pro všechny experimenty byla použita následující sada
 hyperparametrů:
+
 \begin{itemize}
-  \item počet epoch $E = 50$ (s early stoppingem na validační ztrátě),
-  \item velikost batch size $B = 16$,
-  \item počáteční learning rate $\eta_0 = 10^{-3}$,
-  \item trpělivost early stoppingu \texttt{patience} $= 10$ epoch.
+  \item počet epoch: $30$ (s \emph{early stopping} podle validační ztráty),
+  \item velikost batch: $32$ vzorků,
+  \item optimalizátor: Adam se základní rychlostí učení
+        $\eta_0 = 10^{-3}$,
+  \item minimální rychlost učení: $\eta_{\min} = 10^{-5}$,
+  \item počet zahřívacích epoch (warm-up): $3$,
+  \item trpělivost early stopping: $5$ epoch bez zlepšení validační ztráty.
 \end{itemize}
 
-Pro kvantový klasifikátor VQC je nad Adam optimalizátorem použit hladký
-cosinusový plán učení se zahřátím (warm-up). Konkrétně je learning rate v
-epoše $e$ určena schématem
+Rychlost učení je řízena hladkým kosinovým plánem s úvodní fází
+\emph{warm-up}. Po dobu prvních $E_{\mathrm{warm}} = 3$ epoch roste
+$\eta(e)$ lineárně z nuly na $\eta_0$, následně je pro epochu $e$
+aplikováno kosinové rozpadající se schéma mezi $\eta_0$ a $\eta_{\min}$:
 \begin{equation}
   \eta(e) =
   \begin{cases}
-    \eta_0 \,\dfrac{e}{E_{\mathrm{warmup}}}, & e \leq E_{\mathrm{warmup}}, \\[0.5em]
-    \eta_{\min} + \dfrac{1}{2}\,(\eta_0 - \eta_{\min})
-      \left[1 + \cos\!\left(\pi\,\dfrac{e - E_{\mathrm{warmup}}}{E - E_{\mathrm{warmup}}}\right)\right],
-      & e > E_{\mathrm{warmup}},
+    \displaystyle
+    \eta_0 \,\frac{e}{E_{\mathrm{warm}}}, & e \leq E_{\mathrm{warm}}, \\[1.0em]
+    \displaystyle
+    \eta_{\min}
+    + \bigl(\eta_0 - \eta_{\min}\bigr)\,
+      \frac{1 + \cos\!\bigl(\pi\,\tfrac{e-E_{\mathrm{warm}}}{E_{\mathrm{max}}-E_{\mathrm{warm}}}\bigr)}{2},
+      & e > E_{\mathrm{warm}},
   \end{cases}
 \end{equation}
-\myequation{Plán učení \(\eta(e)\) s lineárním warm-upem do epochy \(E_{\mathrm{warmup}}\) a následným kosinovým průběhem mezi \(\eta_0\) a \(\eta_{\min}\).}
+kde $E_{\mathrm{max}} = 30$ je maximální počet epoch. Tato kombinace
+rychlého náběhu a postupného kosinového útlumu se v praxi ukázala jako
+stabilní kompromis mezi rychlou konvergencí a omezením přetrénování.
 
-kde $E_{\mathrm{warmup}} = 3$ a~minimální learning rate je $\eta_{\min} = 10^{-5}$.
-Tento plán zajišťuje pozvolný náběh gradientů v~úvodních epochách a~následné
-plynulé snižování krokové velikosti směrem k~minimu.
+V každé epoše je trénovací množina náhodně promíchána a rozdělena na
+mini-batche. Po zpracování celé trénovací sady je kvantový model vyhodnocen
+na validační sadě a jsou sledovány metriky \emph{val loss} a \emph{val accuracy}.
+Nejlepší nalezené parametry (s minimální validační ztrátou) jsou průběžně
+ukládány a po splnění kritéria early stopping jsou použity pro finální
+vyhodnocení na testovací sadě.
 
-Klasický baseline model používá rovněž Adam s~počátečním learning rate
-$\eta_0 = 10^{-3}$, avšak s~vestavěným plánem
-\texttt{CosineAnnealingLR} z~knihovny PyTorch, který realizuje cosinusový
-průběh bez explicitní warm-up fáze. v~obou případech je trénink ukončen buď
-po dosažení maximálního počtu epoch, nebo dříve, pokud se validační ztráta
-nezlepší po dobu danou parametrem \texttt{patience}.
+\paragraph{Nastavení tréninku klasického baseline modelu}
+
+Klasický baseline klasifikátor nad 64rozměrnými příznaky byl trénován
+odděleně, s idetickými hyperparametry (počet epoch, batch size, optimalizátor) a~váženou binární cross-entropy jako chybovou funkcí.
+Stejně jako u hybridního modelu byl i zde použit early stopping na základě
+vývoje validační ztráty, přičemž k finálnímu porovnání s kvantovým řešením
+byla použita nejlepší konfigurace podle výsledků na validační sadě.
 
 \section{Softwarové prostředí a~knihovny}
 
@@ -905,7 +915,7 @@ Základ softwarového stacku tvořily následující balíčky (uvedeny jsou pou
     \item \textbf{kagglehub} 0.3.13 pro stažení veřejně dostupného datasetu Chest X-Ray Pneumonia z~platformy Kaggle.
 \end{itemize}
 
-Kvantové obvody byly v~této práci simulovány na ideálním backendu \texttt{lightning.gpu} frameworku PennyLane, tj. bez explicitního modelování šumu a~dekoherence reálného kvantového hardwaru. Nastavení náhodného semene (\texttt{seed = 6}) bylo sjednoceno pro NumPy i~PyTorch, aby byla zajištěna reprodukovatelnost všech experimentů v~rámci daného softwarového prostředí.
+Kvantové obvody byly v~této práci simulovány na ideálním backendu \texttt{lightning.qubit} frameworku PennyLane, tj. bez explicitního modelování šumu a~dekoherence reálného kvantového hardwaru. Nastavení náhodného semene (\texttt{seed = 6}) bylo sjednoceno pro NumPy i~PyTorch, aby byla zajištěna reprodukovatelnost všech experimentů v~rámci daného softwarového prostředí.
 
 \subsubsection{Hardwarové prostředí}
 
@@ -916,7 +926,7 @@ Všechny experimenty byly realizovány v~prostředí Google Colab s~Linuxovým o
     \item \textbf{NVIDIA A100} (40\,GB VRAM) -- použita pro plné trénování hybridního modelu a~kvantového klasifikátoru při vyšší batch size a~delších bězích.
 \end{itemize}
 
-Kvantová část modelu byla simulována pomocí backendu \texttt{lightning.gpu} z~knihovny PennyLane, který využívá CUDA a~knihovnu NVIDIA cuQuantum pro akceleraci výpočtu variačních kvantových obvodů na GPU. v~rámci této práce nebyl použit žádný reálný kvantový procesor; všechny kvantové výpočty probíhaly na klasickém hardwaru formou simulace.
+Kvantová část modelu byla simulována pomocí backendu \texttt{lightning.qubit} z~knihovny PennyLane, který využívá CUDA a~knihovnu NVIDIA cuQuantum pro akceleraci výpočtu variačních kvantových obvodů na GPU. v~rámci této práce nebyl použit žádný reálný kvantový procesor; všechny kvantové výpočty probíhaly na klasickém hardwaru formou simulace.
 
 \chapter{Výsledky} \label{chap:vysledky}
 
