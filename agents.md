@@ -5,28 +5,28 @@
 
 ---
 
-## 1. ResNet-50 feature extractor
+## 1. ViT-B/16 feature extractor
 
-**Type:** Pre-trained CNN (classical)
+**Type:** Pre-trained Vision Transformer (classical)
 **Framework:** PyTorch / torchvision
 **Location:** `01_feature_extraction.ipynb` — Google Colab (GPU)
 
 **Role:**
-Acts as a frozen visual encoder. Transforms raw chest X-ray images into compact, high-level feature vectors. The classification head is removed; the network outputs the 2048-dimensional penultimate activation.
+Acts as a frozen visual encoder. Transforms raw chest X-ray images into compact, high-level feature vectors. The classification head is removed; the network outputs the 768-dimensional class token.
 
 **Inputs:**
 - JPEG chest X-ray images, resized to 224×224
 - Normalised with ImageNet statistics (mean `[0.485, 0.456, 0.406]`, std `[0.229, 0.224, 0.225]`)
 
 **Outputs:**
-- `features_train.npy` — shape `(4185, 2048)`
-- `features_val.npy`   — shape `(1047, 2048)`
-- `features_test.npy`  — shape `(624,  2048)`
+- `features_train.npy` — shape `(4185, 768)`
+- `features_val.npy`   — shape `(1047, 768)`
+- `features_test.npy`  — shape `(624,  768)`
 
 **Key settings:**
 ```python
-model = torchvision.models.resnet50(weights="IMAGENET1K_V2")
-model.fc = torch.nn.Identity()   # remove classification head
+model = torchvision.models.vit_b_16(weights="IMAGENET1K_V1")
+model.heads = torch.nn.Identity()   # remove classification head
 model.eval()                     # frozen — no gradient updates
 ```
 

@@ -14,7 +14,7 @@ A classical baseline using a fully connected neural network on the same features
 
 **Key ideas:**
 
-- Use a pre‑trained **ResNet‑50** as a feature extractor on chest X‑ray images.
+- Use a pre‑trained **ViT‑B/16** as a feature extractor on chest X‑ray images.
 - Reduce the 2048‑dimensional feature vector to 64 dimensions using **PCA**.
 - Amplitude‑encode the 64‑dimensional vector into a **6‑qubit** quantum state and classify with a **variational quantum circuit**.
 - Compare the hybrid model against a purely classical baseline trained on the same PCA features.
@@ -30,9 +30,9 @@ The full pipeline consists of four stages:
 1. **Image preprocessing**  
    - Resize to 224×224, convert to tensor, and normalize with standard ImageNet statistics (mean [0.485, 0.456, 0.406], std [0.229, 0.224, 0.225]).
 
-2. **Classical backbone – ResNet‑50**  
-   - A pre‑trained ResNet‑50 with its final classification head replaced by an identity layer is used as a feature extractor.
-   - Each X‑ray is mapped to a 2048‑dimensional feature vector.
+2. **Classical backbone – ViT‑B/16**  
+   - A pre‑trained ViT‑B/16 with its final classification head replaced by an identity layer is used as a feature extractor.
+   - Each X‑ray is mapped to a 768‑dimensional feature vector.
 
 3. **Dimensionality reduction & normalization**  
    - Features are standardized and reduced to **64 principal components** using PCA (chosen after comparing PCA, LDA, and SelectKBest).
@@ -107,9 +107,9 @@ The notebook uses PennyLane’s GPU‑accelerated backends (via `lightning.gpu` 
      - `encoding_method = "amplitude"`  
      - `batch_size = 16`, `learning_rate = 1e-3`, `epochs = 50`  
 
-4. **Step 1 – Feature extraction (ResNet‑50)**
+4. **Step 1 – Feature extraction (ViT‑B/16)**
 
-   - The notebook downloads the Kaggle dataset via `kagglehub`, builds PyTorch `DataLoader`s and runs ResNet‑50 to extract 2048‑dimensional features for each image.
+   - The notebook downloads the Kaggle dataset via `kagglehub`, builds PyTorch `DataLoader`s and runs ViT‑B/16 to extract 768‑dimensional features for each image.
    - Features and metadata are saved into the `.results/` directory for reuse.
 
 5. **Step 2 – Classical preprocessing (PCA pipeline)**

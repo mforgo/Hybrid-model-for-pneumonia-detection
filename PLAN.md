@@ -99,22 +99,22 @@ sampler = WeightedRandomSampler(sample_weights, len(sample_weights))
 **Runtime:** ~20 min on T4 GPU
 **Output:** `artifacts/features/*.npy` (cached to Google Drive)
 
-### 2.1 ResNet-50 feature extractor (primary backbone)
+### 2.1 ViT-B/16 feature extractor (primary backbone)
 
 ```python
-model = torchvision.models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)
-model.fc = torch.nn.Identity()   # headless: output is 2048-dim
+model = torchvision.models.vit_b_16(weights=ViT_B_16_Weights.IMAGENET1K_V1)
+model.heads = torch.nn.Identity()   # headless: output is 768-dim
 model.eval()
-# Output shape: (N, 2048)
+# Output shape: (N, 768)
 ```
 
-### 2.2 EfficientNet-B0 (ablation backbone)
+### 2.2 ConvNeXt-Tiny (ablation backbone)
 
 ```python
-model = torchvision.models.efficientnet_b0(weights=EfficientNet_B0_Weights.IMAGENET1K_V1)
-model.classifier = torch.nn.Identity()   # output is 1280-dim
+model = torchvision.models.convnext_tiny(weights=ConvNeXt_Tiny_Weights.IMAGENET1K_V1)
+model.classifier = torch.nn.Identity()   # output is 768-dim
 model.eval()
-# Output shape: (N, 1280) — reduce PCA to 64 same as ResNet path
+# Output shape: (N, 768) — reduce PCA to 64 same as ViT path
 ```
 
 Run both and save separately. Compare final VQC metrics for each backbone in the results table.
