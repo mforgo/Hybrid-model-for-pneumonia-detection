@@ -5,33 +5,35 @@
 
 ---
 
-## 1. ViT-B/16 feature extractor
+## 1. ConvNeXt-Tiny feature extractor
 
-**Type:** Pre-trained Vision Transformer (classical)
+**Type:** Pre-trained ConvNeXt-Tiny (classical)
 **Framework:** PyTorch / torchvision
-**Location:** `01_feature_extraction.ipynb` — Google Colab (GPU)
+**Location:** `02_preprocessing.ipynb`
 
 **Role:**
-Acts as a frozen visual encoder. Transforms raw chest X-ray images into compact, high-level feature vectors. The classification head is removed; the network outputs the 768-dimensional class token.
+Acts as a frozen visual encoder. Transforms raw chest X-ray images into compact, high-level feature vectors. The classification head is removed; the network outputs the 768-dimensional pooled feature vector.
 
 **Inputs:**
 - JPEG chest X-ray images, resized to 224×224
 - Normalised with ImageNet statistics (mean `[0.485, 0.456, 0.406]`, std `[0.229, 0.224, 0.225]`)
 
 **Outputs:**
-- `features_train.npy` — shape `(4185, 768)`
-- `features_val.npy`   — shape `(1047, 768)`
-- `features_test.npy`  — shape `(624,  768)`
+- `convnext_tiny_pca_train.npy` — shape `(4185, 64)`
+- `convnext_tiny_pca_val.npy`   — shape `(1047, 64)`
+- `convnext_tiny_pca_test.npy`  — shape `(624,  64)`
+- `convnext_tiny_scaler.pkl` — fitted `StandardScaler`
+- `convnext_tiny_pca.pkl`    — fitted `PCA(n_components=64)`
 
 **Key settings:**
 ```python
-model = torchvision.models.vit_b_16(weights="IMAGENET1K_V1")
-model.heads = torch.nn.Identity()   # remove classification head
+model = torchvision.models.convnext_tiny(weights="IMAGENET1K_V1")
+model.classifier = torch.nn.Identity()   # remove classification head
 model.eval()                     # frozen — no gradient updates
 ```
 
 **Notes:**
-Run once; outputs are cached to Google Drive. All subsequent experiments load `.npy` arrays directly, skipping this step.
+Run once; outputs are cached to `artifacts/features/`. All subsequent experiments load `.npy` arrays directly, skipping this step.
 
 ---
 
@@ -39,13 +41,13 @@ Run once; outputs are cached to Google Drive. All subsequent experiments load `.
 
 **Type:** Scikit-learn pipeline step (classical)
 **Framework:** scikit-learn
-**Location:** `01_feature_extraction.ipynb`
+**Location:** `02_preprocessing.ipynb`
 
 **Role:**
-Compresses the 2048-dimensional ResNet feature vector to 64 dimensions — matching the Hilbert space of a 6-qubit register (2⁶ = 64). Fit exclusively on the training split to prevent data leakage.
+Compresses the 768-dimensional ConvNeXt-Tiny feature vector to 64 dimensions — matching the Hilbert space of a 6-qubit register (2⁶ = 64). Fit exclusively on the training split to prevent data leakage.
 
 **Inputs:**
-- `features_train.npy` — shape `(4185, 2048)`
+- `convnext_tiny_pca_train.npy` — shape `(4185, 768)`
 
 **Outputs:**
 - `pca_features_train.npy` — shape `(4185, 64)`
@@ -334,10 +336,10 @@ ci_low, ci_high = np.percentile(aucs, [2.5, 97.5])
 **Location:** `03_evaluation.ipynb`
 
 **Role:**
-Generates class activation maps showing which regions of the chest X-ray the ResNet-50 feature extractor attends to. Provides interpretability evidence for the thesis discussion section.
+Generates class activation maps showing which regions of the chest X-ray the ConvNeXt-Tiny feature extractor attends to. Provides interpretability evidence for the thesis discussion section.
 
 **Inputs:**
-- ResNet-50 model (with classification head re-attached for this analysis only)
+- ConvNeXt-Tiny model (with classification head re-attached for this analysis only)
 - Sample X-ray images from test set (True Positive, False Negative, True Negative)
 
 **Outputs:**
@@ -348,7 +350,7 @@ Generates class activation maps showing which regions of the chest X-ray the Res
 from pytorch_grad_cam import GradCAM
 from pytorch_grad_cam.utils.image import show_cam_on_image
 
-cam = GradCAM(model=resnet_full, target_layers=[resnet_full.layer4[-1]])
+cam = GradCAM(model=cnx_full, target_layers=[cnx_full.stages[-1]])
 grayscale_cam = cam(input_tensor=img_tensor)
 visualisation = show_cam_on_image(img_rgb, grayscale_cam[0])
 ```
@@ -361,7 +363,7 @@ visualisation = show_cam_on_image(img_rgb, grayscale_cam[0])
 Chest X-Ray images
         │
         ▼
-[1] ResNet-50 extractor  ──saves──▶  features.npy (Drive)
+[1] ConvNeXt-Tiny extractor  ──saves──▶  convnext_tiny_pca_*.npy + scaler.pkl + pca.pkl
         │
         ▼
 [2] PCA reducer          ──saves──▶  pca_features.npy + scaler.pkl + pca.pkl
