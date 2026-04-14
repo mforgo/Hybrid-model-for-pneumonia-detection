@@ -1,5 +1,9 @@
 # Hybrid Model for Pneumonia Detection
 
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/mforgo/Hybrid-model-for-pneumonia-detection/blob/main/pneumonia_hybrid_qml.ipynb)
+[![GitHub stars](https://img.shields.io/github/stars/mforgo/Hybrid-model-for-pneumonia-detection)](https://github.com/mforgo/Hybrid-model-for-pneumonia-detection/stargazers)
+[![License](https://img.shields.io/github/license/mforgo/Hybrid-model-for-pneumonia-detection)](https://github.com/mforgo/Hybrid-model-for-pneumonia-detection/blob/main/LICENSE)
+
 This repository contains the implementation of a hybrid classical–quantum model for pneumonia detection from chest X‑ray images, developed as part of a secondary school research project (Středoškolská odborná činnost, SOČ).
 The model combines a ConvNeXt‑Tiny feature extractor with DANN, autoencoder, and a 6‑qubit variational quantum classifier (VQC) with data re‑uploading, implemented in PennyLane.
 
@@ -265,8 +269,15 @@ The thesis acknowledges the following limitations:
 
 ## 9. Citation
 
-If you use this code or ideas from the project, please cite the associated SOČ thesis (Czech, English annotation in the front matter):
+If you use this code, please cite:
 
-> M. Forgó, *Hybridní model pro detekci pneumonie / Hybrid Model for Pneumonia Detection*, Středoškolská odborná činnost (SOČ), 2026.
-
-You can also link to this repository and mention that it implements a hybrid ConvNeXt‑Tiny + VQC pipeline for pneumonia detection using PennyLane and PyTorch.
+```bibtex
+@mastersthesis{forgo2026hybrid,
+  author    = {Michal Forgó},
+  title     = {Hybridní model pro detekci pneumonie / Hybrid Model for Pneumonia Detection},
+  school    = {Středoškolská odborná činnost (SOČ)},
+  year      = {2026},
+  url       = {https://github.com/mforgo/Hybrid-model-for-pneumonia-detection},
+  note      = {Czech secondary school research project}
+}
+```
