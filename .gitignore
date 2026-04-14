@@ -30,3 +30,4 @@ features
 *.ps
 !docs/soc.tex
 !docs/literatura.bib
+.opencode

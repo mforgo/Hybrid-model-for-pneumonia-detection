@@ -150,7 +150,7 @@ nn.Sequential(
 **Hyperparameters:**
 | Parameter | Value |
 |-----------|-------|
-| Trainable params | ~164,865 |
+| Trainable params | ~2,113 |
 | Loss | Weighted Binary Cross-Entropy |
 | Optimizer | Adam, LR 1e-3 |
 | LR schedule | `CosineAnnealingLR` |

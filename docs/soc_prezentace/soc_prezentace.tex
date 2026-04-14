@@ -13,6 +13,10 @@
 \usepackage{graphicx}
 \usepackage{multicol}
 
+% Bibliography setup
+\usepackage[style=numeric, backend=biber]{biblatex}
+\addbibresource{../../soc/literatura.bib}
+
 % Set default font family to sans-serif (Helvetica)
 \renewcommand{\familydefault}{\sfdefault}
 
@@ -145,23 +149,23 @@
        \textbf{Pipeline Flow:}
        \begin{enumerate}
            \item \textbf{Input:} Chest X-Ray ($224 \times 224$).
-           \item \textbf{Feature Extraction:} ResNet-50 (frozen) $\rightarrow$ 2048-D vector.
-           \item \textbf{Compression:} PCA ($2048 \rightarrow 64$).
-           \item \textbf{Classification:} VQC (6 qubits, 108 params).
+           \item \textbf{Feature Extraction:} ConvNeXt-Tiny (frozen) $\rightarrow$ 768-D vector.
+           \item \textbf{Compression:} PCA/Autoencoder ($768 \rightarrow 64$).
+           \item \textbf{Classification:} VQC (6 qubits, 54 params).
        \end{enumerate}
 
     \column{0.5\textwidth}
       \centering
       \footnotesize
-      \begin{tabular}{llc}
-        \toprule
-        \textbf{Stage} & \textbf{Operation} & \textbf{Params} \\
-        \midrule
-        Features & ResNet-50 & 0 (frozen) \\
-        Reduction & PCA & 0 (fixed) \\
-        \textbf{Decision} & \textbf{VQC (6-qubit)} & \textbf{108} \\
-        \bottomrule
-      \end{tabular}
+       \begin{tabular}{llc}
+         \toprule
+         \textbf{Stage} & \textbf{Operation} & \textbf{Params} \\
+         \midrule
+         Features & ConvNeXt-Tiny & 0 (frozen) \\
+         Reduction & PCA/Autoencoder & 0 (fixed) \\
+         \textbf{Decision} & \textbf{VQC (6-qubit)} & \textbf{54} \\
+         \bottomrule
+       \end{tabular}
       \vspace{0.2cm}
       \captionof{table}{Parameter counts [cite: 22]}
   \end{columns}
@@ -196,16 +200,16 @@
       \column{0.5\textwidth}
       \textbf{Parameter Efficiency:}
       \begin{itemize}
-          \item Classical MLP: 164,865 params.
-          \item Quantum VQC: \textbf{108 params}.
-          \item \textcolor{NTCPurple}{\textbf{Reduction: 1527$\times$}}[cite: 58].
+          \item Classical MLP: 2,113 params.
+          \item Quantum VQC: \textbf{54 params}.
+          \item \textcolor{NTCPurple}{\textbf{Reduction: 39$\times$}}[cite: 58].
       \end{itemize}
       
       \column{0.5\textwidth}
       \textbf{Diagnostic Accuracy (AUC):}
       \begin{itemize}
-          \item Classical MLP: 0.91 AUC.
-          \item Hybrid VQC: \textbf{0.74 AUC}[cite: 66].
+          \item Classical MLP: 0.940 AUC.
+          \item Hybrid VQC: \textbf{0.974 AUC}[cite: 66].
       \end{itemize}
   \end{columns}
   
@@ -231,5 +235,10 @@
   \textcolor{NTCGrey}{Contact: mforgo@example.com}
 \end{frame}
 }
+
+% --- REFERENCES ---
+\begin{frame}{References}
+  \printbibliography[heading=none]
+\end{frame}
 
 \end{document}

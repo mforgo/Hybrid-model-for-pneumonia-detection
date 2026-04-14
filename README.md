@@ -16,7 +16,7 @@ A classical baseline using a fully connected neural network on the same features
 
 - Use a pre‑trained **ConvNeXt‑Tiny** as a feature extractor on chest X‑ray images.
 - Reduce the 768‑dimensional feature vector to 64 dimensions using **PCA**.
-- **Angle‑encode** the 64‑dimensional vector (first 6 components) into a **6‑qubit** quantum state and classify with a **variational quantum circuit**.
+- Encode the 64‑dimensional vector into a **6‑qubit** quantum state using **amplitude embedding** and classify with a **variational quantum circuit**.
 - Compare the hybrid model against a purely classical baseline trained on the same PCA features.
 
 ***
@@ -37,10 +37,10 @@ The full pipeline consists of four stages:
 
 3. **Dimensionality reduction & normalization**  
    - Features are standardized and reduced to **64 principal components** using PCA (explained variance at 64 PCs: **0.749** for ConvNeXt‑Tiny).
-   - The 64‑dimensional vectors are L2‑normalized to satisfy angle encoding constraints.
+   - The 64‑dimensional vectors are L2‑normalized to satisfy amplitude encoding constraints.
 
 4. **Quantum classifier (VQC)**  
-   - The first 6 PCA components are **angle‑encoded** via `qml.AngleEmbedding(rotation='Y')` into a **6‑qubit** state.
+   - The 64 PCA components are **amplitude‑encoded** via `qml.AmplitudeEmbedding` into a **6‑qubit** state.
    - A variational circuit with 3 layers of single‑qubit rotations (`qml.Rot`) and ring‑style CNOT entanglers is applied.
    - The model measures a single Pauli‑Z expectation value and maps it to a probability of pneumonia: `p = (1 + ⟨Z₀⟩) / 2`.
    - Gradient computation uses the **adjoint** differentiation method (~100× faster than parameter-shift on `lightning.qubit`).
@@ -110,7 +110,7 @@ The notebook uses PennyLane's `lightning.qubit` backend (falls back from `lightn
    - `device = "cuda"` (if available)  
    - `reduction_method = "pca"`, `target_dims = 64`  
    - `n_qubits = 6`, `n_layers = 3`  
-   - `encoding_method = "angle"`, `diff_method = "adjoint"`  
+   - `encoding_method = "amplitude"`, `diff_method = "adjoint"`  
    - `batch_size = 16`, `learning_rate = 1e-3`, `epochs = 50`, `early_stopping_patience = 3`
 
 4. **Step 1 – Feature extraction (ConvNeXt‑Tiny)**
@@ -148,22 +148,22 @@ On the 624‑image test set (62.5 % pneumonia, 37.5 % normal), the following met
 
 | Metric             | Classical (ConvNeXt‑Tiny + MLP) | Hybrid (ConvNeXt‑Tiny + VQC) | Difference |
 |--------------------|--------------------------------|------------------------------|-----------|
-| Accuracy           | 86.54 %                        | 75.80 %                      | −10.74 %  |
-| Precision          | 83.26 %                        | 77.35 %                      | −5.91 %   |
-| Recall (Sensitivity) | 98.21 %                      | 86.67 %                      | −11.54 %  |
-| Specificity        | 67.09 %                        | 57.69 %                      | −9.40 %   |
-| F1‑score           | 0.9012                         | 0.8174                       | −0.0838   |
-| AUC‑ROC (val)      | 0.9907                         | **0.9688**                   | —         |
-| AUC‑ROC (test)     | 0.9530                         | 0.8600                       | −0.0930   |
+| Accuracy           | 82.53 %                        | 81.25 %                      | −1.28 %   |
+| Precision          | 78.27 %                        | 77.03 %                      | −1.24 %   |
+| Recall (Sensitivity) | 99.74 %                      | 99.74 %                      | 0.00 %    |
+| Specificity        | 53.85 %                        | 50.43 %                      | −3.42 %   |
+| F1‑score           | 0.8771                         | 0.8693                       | −0.0078   |
+| AUC‑ROC (val)      | 0.991                          | **0.969**                    | —         |
+| AUC‑ROC (test)     | 0.940                          | 0.860                        | −0.080    |
 | Trainable params (classifier) | 2,113                | 54                           | −2,059    |
-| Training time      | ~16 epochs (early stop)        | 7 epochs (early stop)        | —         |
+| Training time      | ~7 epochs (early stop)         | 7 epochs (early stop)         | —         |
 
-The hybrid model achieves a strong **96.88 % AUC on the validation set** and a respectable 86.00 % on the held‑out test set, with **39× fewer trainable parameters** in the decision stage (54 vs. 2,113), which is significant in the NISQ regime.
+The hybrid model achieves a strong **96.9 % AUC on the validation set** and 86.0 % on the held‑out test set, with **39× fewer trainable parameters** in the decision stage (54 vs. 2,113), which is significant in the NISQ regime.
 
 ### 6.2 Behaviour and interpretation
 
-- The hybrid model shows relatively high **sensitivity (86.7 %)** with moderate specificity (57.7 %), meaning it tends to correctly identify pneumonia cases while maintaining a higher false positive rate than the classical baseline.
-- The gap between validation AUC (96.88 %) and test AUC (86.00 %) suggests some overfitting, which is expected given the small quantum model capacity and limited training data.
+- The hybrid model shows very high **sensitivity (99.7 %)** with moderate specificity (50.4 %), meaning it correctly identifies nearly all pneumonia cases while having a higher false positive rate than the classical baseline.
+- The gap between validation AUC (96.9 %) and test AUC (86.0 %) suggests some overfitting, which is expected given the small quantum model capacity and limited training data.
 - A noticeable **domain shift** between train/validation and test label distributions (pneumonia share drops from ~74.2 % to 62.5 %) likely contributes to the performance gap.
 - The VQC training stopped early at **epoch 7** (patience = 3), indicating the model converged quickly but did not generalize as well as the MLP.
 
@@ -177,15 +177,15 @@ Some key limitations identified in the thesis:
 - Only a single public pediatric dataset from one institution was used, so generalization to other populations, hospitals or acquisition protocols is unknown.
 - The 768→64 PCA reduction retains only **74.9 %** of the explained variance (ConvNeXt‑Tiny), which may discard clinically relevant information and caps the achievable performance of the quantum classifier.
 - The quantum model was trained on an **ideal simulator** without realistic noise; performance on real NISQ hardware would likely be worse without explicit error‑mitigation techniques.
-- The gap between validation AUC (96.88 %) and test AUC (86.00 %) indicates overfitting, suggesting the need for stronger regularization or more training data.
-- The VQC uses **angle encoding** (only 6 of 64 PCA components), which discards 90.6 % of the available PCA features. Amplitude encoding was explored but angle encoding was chosen for gradient efficiency.
+- The gap between validation AUC (96.9 %) and test AUC (86.0 %) indicates overfitting, suggesting the need for stronger regularization or more training data.
+- The VQC uses **amplitude encoding** of all 64 PCA components into 6 qubits (padding with zeros for the 2^6 = 64 amplitude slots).
 
 Future directions suggested by the work include:
 
 - Running the VQC on real hardware (e.g. IBM Quantum) with noise mitigation.  
 - Exploring alternative quantum architectures (e.g. quantum kernels, quanvolutional layers, ensembles with classical models).  
 - Using richer, multi‑institutional datasets and domain‑adaptation techniques to address dataset shift.
-- Investigating amplitude encoding to utilize all 64 PCA components instead of just 6.
+- Investigating more expressive quantum architectures or alternative encoding schemes.
 
 ***
 
@@ -193,6 +193,6 @@ Future directions suggested by the work include:
 
 If you use this code or ideas from the project, please cite the associated SOČ thesis (Czech, English annotation in the front matter):
 
-> M. Forg, *Hybridní model pro detekci pneumonie / Hybrid Model for Pneumonia Detection*, Středoškolská odborná činnost (SOČ), 2026.
+> M. Forgó, *Hybridní model pro detekci pneumonie / Hybrid Model for Pneumonia Detection*, Středoškolská odborná činnost (SOČ), 2026.
 
 You can also link to this repository and mention that it implements a hybrid ConvNeXt‑Tiny + VQC pipeline for pneumonia detection using PennyLane and PyTorch.
