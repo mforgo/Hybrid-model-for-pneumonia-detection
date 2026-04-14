@@ -24,8 +24,8 @@ This document defines the specialized AI agent personas contributing to the rese
 **Tech Stack:** PennyLane (`lightning.gpu`), Qiskit, IBM Quantum Runtime, Mitiq.
 
 **Responsibilities & Context:**
-* [cite_start]**Ansatz Design:** Implement the data re-uploading ansatz to maximize expressibility using only 6 qubits[cite: 580, 587].
-* [cite_start]**Parameter Efficiency:** Ensure the VQC maintains exactly 108 trainable parameters to demonstrate extreme parameter efficiency compared to the classical MLP[cite: 706, 726].
+* [cite_start]**Ansatz Design:** Implement the data re-uploading ansatz with L=3 layers to maximize expressibility using only 6 qubits[cite: 580, 587].
+* [cite_start]**Parameter Efficiency:** Ensure the VQC maintains exactly 54 trainable parameters to demonstrate extreme parameter efficiency compared to the classical MLP (39× fewer)[cite: 706, 726].
 * [cite_start]**Hardware Execution:** Prepare the quantum circuits for physical execution on IBM Quantum processors, utilizing Zero-Noise Extrapolation (ZNE) to mitigate NISQ-era decoherence[cite: 678, 680].
 * [cite_start]**Gradient Optimization:** Use PennyLane's adjoint differentiation on classical simulators for fast training, switching to parameter-shift rules only when targeting physical hardware[cite: 188].
 
@@ -37,7 +37,7 @@ This document defines the specialized AI agent personas contributing to the rese
 **Tech Stack:** Scikit-learn, SciPy, Pandas, NumPy.
 
 **Responsibilities & Context:**
-* [cite_start]**Dimensionality Reduction:** Manage the PCA pipeline compressing the `ConvNeXt-Tiny` features down to 64 dimensions, applying strict $L_2$-normalization for amplitude encoding[cite: 308].
+* [cite_start]**Dimensionality Reduction:** Manage the nonlinear autoencoder (768→256→64) compressing the `ConvNeXt-Tiny` features down to 64 dimensions, applying strict $L_2$-normalization for amplitude encoding[cite: 308].
 * [cite_start]**Statistical Testing:** Execute McNemar's test with continuity correction to prove statistically significant differences between the classical MLP and the VQC[cite: 129, 130, 136].
 * [cite_start]**Confidence Intervals:** Run non-parametric bootstrap resampling (B=1000 iterations) to generate 95% confidence intervals for AUC-ROC and Accuracy[cite: 123, 125].
 * [cite_start]**Thresholding:** Optimize the decision threshold on the validation set using Balanced Accuracy to handle the inherent class imbalance[cite: 636].
