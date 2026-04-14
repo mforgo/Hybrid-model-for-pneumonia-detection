@@ -3,10 +3,9 @@ __pycache__
 chest_xray
 .vscode
 features
-*.npy
-*.png
-!results/*.npy
+.opencode
 
+# LaTeX build artifacts
 *.log
 *.aux
 *.out
@@ -28,6 +27,7 @@ features
 *.bcf*
 *.equ
 *.ps
+
+# Keep specific thesis files
 !docs/soc.tex
 !docs/literatura.bib
-.opencode
