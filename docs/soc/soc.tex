@@ -873,17 +873,20 @@ Vektor příznaků $\mathbf{x} \in \mathbb{R}^{64}$ je nejprve zakódován do kv
 Tento přístup (\texttt{qml.AmplitudeEmbedding}) je pro 64 příznaků v éře NISQ jedinou životaschopnou volbou, neboť \textit{angle encoding} by vyžadoval neadekvátní množství hradel a \textit{basis encoding} 64 fyzických qubitů.
 
 \subsubsection{Parametrizovaný ansatz a expresivita}
-Pro maximalizaci vyjadřovací schopnosti malého počtu qubitů využíváme strategii \textit{data re-uploading}. Ansatz je navržen jako sekvence $L$ identických vrstev, kde každá vrstva začíná znovuvložením vstupních dat $\mathbf{x}$ pomocí úhlového kódování ($\mathrm{RY}$ rotace), po kterém následuje blok plně parametrizovaných rotačních hradel $\mathrm{Rot}(\phi,\theta,\omega)$ a kruhové CNOT propletení.
+Pro maximalizaci vyjadřovací schopnosti malého počtu qubitů využíváme strategii \textit{data re-uploading}. Ansatz je navržen jako sekvence $L$ identických vrstev, kde každá vrstva začíná znovuvložením vstupních dat $\mathbf{x}$ pomocí naučitelného amplitudového kódování s~škálovacími parametry $w_i$, po kterém následuje blok plně parametrizovaných rotačních hradel $\mathrm{Rot}(\phi,\theta,\omega)$ a lineární CNOT propletení (bez SWAP režie pro IBM hardware). Měřící báze je parametrizovaná rotacemi $R_Y(\theta_{ry}) \rightarrow R_Z(\theta_{rz})$ před měřením Pauliho $Z$.
 
 Abychom rigorózně zdůvodnili volbu počtu vrstev $L$, byla provedena analýza expresivity (Sim a kol., 2019). Expresivita se měří pomocí Kullback-Leiblerovy (KL) divergence mezi distribucí fidelit stavů generovaných ansatzem a teoretickou Haarovou mírou:
 \begin{equation}
     Expr(A) = D_{KL}(P_A(F) \parallel P_{Haar}(F))
 \end{equation}
 \myequation{Výpočet expresivity ansatzu jako Kullback-Leiblerovy divergence mezi empirickým rozdělením fidelit a teoretickým Haarovým rozdělením.}
-Expresivitní sken odhalil, že pro $L=1$ a $L=2$ je obvod příliš „tuhý“, zatímco pro $L=4$ již nárůst expresivity marginálně klesá. Jako optimální kompromis vzhledem k hardwarovému šumu byla zvolena hloubka \textbf{$L = 3$ vrstvy}. To představuje celkem pouhých \textbf{54 trénovatelných parametrů} ($3 \text{ vrstvy} \times 6 \text{ qubitů} \times 3 \text{ Eulerovy úhly}$).
+Expresivitní sken odhalil, že pro $L=1$ a $L=2$ je obvod příliš „tuhý“, zatímco pro $L=4$ již nárůst expresivity marginálně klesá. Jako optimální kompromis vzhledem k hardwarovému šumu byla zvolena hloubka \textbf{$L = 3$ vrstvy}. To představuje celkem \textbf{62 trénovatelných parametrů} ($3 \text{ vrstvy} \times 6 \text{ qubitů} \times 3 \text{ Eulerovy úhly}$ -- 54 pro rotace + 6 pro naučitelné škálování vstupu + 2 pro měřící bázi).
 
 \subsubsection{Měření a interpretace výstupu}
 Na konci obvodu je na vybraném (případně na všech) qubitech provedeno měření Pauli-Z observáblu. Získáme tak střední hodnotu $\langle Z \rangle \in [-1, 1]$. Ta je následně klasicky transformována lineárním mapováním nebo aktivační funkcí do intervalu $(0, 1)$ a interpretována jako pravděpodobnost diagnózy.
+
+\subparagraph{Parametrizovaná měřící báze (Enhanced Measurement):}
+Pro maximalizaci diskriminační schopnosti byla použita parametrizovaná měřící báze místo pevného Pauli-Z. Rotace $R_Y(\theta_{ry}) \rightarrow R_Z(theta_{rz}) \rightarrow Z)$ umožňuje modelu naučit se optimální úhel pro separaci tříd v Hilbertově prostoru. Dva dodatečné parametry (theta_ry, theta_rz) jsou trénovány spolu s ostatními parametry obvodu.
 
 \section{Tréninkové postupy a optimalizace} \label{sec:training}
 
@@ -919,6 +922,9 @@ Tato kombinace se v praxi ukázala jako vysoce stabilní kompromis omezující z
 
 \subparagraph{Výpočet gradientů pro VQC:}
 Pro výpočet gradientů variačního kvantového obvodu byla použita \textit{adjoint} diferenciální metoda implementovaná v knihovně PennyLane. Tato metoda je efektivní alternativou k standardní \textit{parameter-shift} metodě (~100× rychlejší na simulátoru \texttt{lightning.gpu}) a je plně kompatibilní s hardwarovou akcelerací na GPU. Pro případné nasazení na reálný kvantový hardware by bylo nutné přepnout na \textit{parameter-shift}, který je hardwarově nezávislý.
+
+\subparagraph{Quantum Natural Gradient (QNG):}
+Experimentálně byl testován také Quantum Natural Gradient (QNG) optimalizátor využívající Fubini-Studiovu metriku místo standardní Euclidean. QNG používá přirozenou geometrii kvantového parametrického prostoru: $\theta_{k+1} = \theta_k - \eta \cdot F^{-1} \nabla \mathcal{L}$, kde $F$ je Fubini-Studiova matice. V našich experimentech však standardní Adam vykázal srovnatelnou nebo lepší konvergenci při menší výpočetní náročnosti, a proto byl ponechán jako primární optimalizátor.
 
 \section{Statistické vyhodnocení a interpretovatelnost} \label{sec:evaluation}
 
@@ -986,7 +992,7 @@ Nastavení náhodného semene (\texttt{seed = 6}) bylo striktně sjednoceno nap�
 
 \chapter{Výsledky} \label{chap:vysledky}
 
-V této kapitole jsou prezentovány dosažené výsledky experimentů zaměřených na detekci pneumonie pomocí navrženého hybridního kvantově-klasického modelu. Výkonnost modelu je kvantitativně vyhodnocena pomocí standardních metrik a~porovnána s~referenčním klasickým modelem. Oba modely dosahují velmi blízkých výsledků -- VQC s~54 parametry dosahuje AUC-ROC 0{,}860 na testovací sadě (validační AUC: 0{,}969) a~přesnosti 81{,}25\,\%, zatímco MLP s~2\,113 parametry dosahuje AUC-ROC 0{,}940 na testovací sadě (validační AUC: 0{,}991) a~přesnosti 82{,}53\,\%.
+V této kapitole jsou prezentovány dosažené výsledky experimentů zaměřených na detekci pneumonie pomocí navrženého hybridního kvantově-klasického modelu. Výkonnost modelu je kvantitativně vyhodnocena pomocí standardních metrik a~porovnána s~referenčním klasickým modelem. Oba modely dosahují velmi blízkých výsledků -- VQC s~62 parametry dosahuje AUC-ROC 0{,}860 na testovací sadě (validační AUC: 0{,}969) a~přesnosti 81{,}25\,\%, zatímco MLP s~2\,113 parametry dosahuje AUC-ROC 0{,}940 na testovací sadě (validační AUC: 0{,}991) a~přesnosti 82{,}53\,\%. Experimenty zahrnovaly rozšířený ansatz s naučitelným škálováním vstupu, parametrizovanou měřící bází a lineárním propojením qubitů pro optimalizaci na reálném hardwaru IBM.
 
 \section{Průběh trénování sítě}
 Trénování hybridního modelu bylo plánováno na 50 epoch s mechanismem early stopping (patience=3). Model konvergoval rychle -- trénovací MSE klesla z~0{,}919 na 0{,}153 a~validační AUC dosáhlo 0{,}999 již po 5. epochě. Early stopping byl aktivován po 10. epochě, kdy se validační ztráta přestala zlepšovat. Na Obrázku \ref{fig:learning_curve} je znázorněn vývoj chybové funkce a~přesnosti.
@@ -1030,7 +1036,7 @@ Výsledky obou modelů na testovací sadě jsou shrnuty v Tabulce \ref{tab:vysle
         AUC-ROC (val) & 0{,}991 & 0{,}969 & $-$0{,}022 \\
         Balanced Accuracy & 0{,}768 & 0{,}751 & $-$0{,}017 \\
         \hline
-        \textbf{Parametry (klasifikátor)} & 2\,113 & \textbf{54} & \textbf{39{,}1× méně} \\
+        \textbf{Parametry (klasifikátor)} & 2\,113 & \textbf{62} & \textbf{34{,}1× méně} \\
         \textbf{Rozhodovací práh} & 0{,}30 & 0{,}35 & -- \\
         \hline
     \end{tabular}
@@ -1130,7 +1136,7 @@ Pozorovaný dataset shift má přímý dopad na interpretaci výsledků. Model b
 V literatuře je dobře zdokumentováno, že doménový posun (domain shift) mezi trénovací a~testovací distribucí patří mezi hlavní zdroje selhání modelů počítačového vidění v~medicíně~\cite{domain_shift_chestxray}. Rozdíly mohou vznikat nejen v~zastoupení tříd, ale i~v typu přístroje, nastavení expozice, věkové struktuře pacientů nebo přítomnosti artefaktů. V~této práci byl dataset shift mitigován pomocí doménově-adverzálního učení (DANN) s~vrstvou pro reverzaci gradientu (GRL), které adaptuje konvoluční extraktor ConvNeXt-Tiny tak, aby produkoval příznaky invariantní vůči rozdílným distribucím trénovací a~testovací sady. Teoretický popis této metody je uveden v~podkapitole~\ref{subsec:dann_theory}.
 
 \section{Závěrečné poznámky k~výsledkům}
-Celkově lze konstatovat, že navržený hybridní model \textbf{potvrdil} původní hypotézu o~dosažení srovnatelné klasifikační přesnosti s~klasickým ConvNeXt-Tiny. Rozdíl v~přesnosti činí pouhých 1{,}28\,\% bodu ve prospěch MLP, zatímco VQC dosahuje vyššího validačního AUC-ROC (0{,}969 vs 0{,}940). Z~hlediska výzkumu v~oblasti QML je tento výsledek cenný, neboť ukazuje, že i~relativně mělký kvantový ansatz s~54 parametry dokáže zpracovat vysoce komprimovanou reprezentaci medicínských obrazových dat a~dosáhnout výkonnosti srovnatelné s~klasickým MLP obsahujícím 2\,113 parametrů. 
+Celkově lze konstatovat, že navržený hybridní model \textbf{potvrdil} původní hypotézu o~dosažení srovnatelné klasifikační přesnosti s~klasickým ConvNeXt-Tiny. Rozdíl v~přesnosti činí pouhých 1{,}28\,\% bodu ve prospěch MLP, zatímco VQC dosahuje vyššího validačního AUC-ROC (0{,}969 vs 0{,}940). Z~hlediska výzkumu v~oblasti QML je tento výsledek cenný, neboť ukazuje, že i~relativně mělký kvantový ansatz s~62 parametry dokáže zpracovat vysoce komprimovanou reprezentaci medicínských obrazových dat a~dosáhnout výkonnosti srovnatelné s~klasickým MLP obsahujícím 2\,113 parametrů. 
 
 \chapter{Diskuse} \label{chap:diskuse}
 
