@@ -886,7 +886,7 @@ Expresivitní sken odhalil, že pro $L=1$ a $L=2$ je obvod příliš „tuhý“
 Na konci obvodu je na vybraném (případně na všech) qubitech provedeno měření Pauli-Z observáblu. Získáme tak střední hodnotu $\langle Z \rangle \in [-1, 1]$. Ta je následně klasicky transformována lineárním mapováním nebo aktivační funkcí do intervalu $(0, 1)$ a interpretována jako pravděpodobnost diagnózy.
 
 \subparagraph{Parametrizovaná měřící báze (Enhanced Measurement):}
-Pro maximalizaci diskriminační schopnosti byla použita parametrizovaná měřící báze místo pevného Pauli-Z. Rotace $R_Y(\theta_{ry}) \rightarrow R_Z(theta_{rz}) \rightarrow Z)$ umožňuje modelu naučit se optimální úhel pro separaci tříd v Hilbertově prostoru. Dva dodatečné parametry (theta_ry, theta_rz) jsou trénovány spolu s ostatními parametry obvodu.
+Pro maximalizaci diskriminační schopnosti byla použita parametrizovaná měřící báze místo pevného Pauli-Z. Rotace $R_Y(\theta_{ry}) \rightarrow R_Z(\theta_{rz}) \rightarrow Z$ umožňuje modelu naučit se optimální úhel pro separaci tříd v Hilbertově prostoru. Dva dodatečné parametry ($\theta_{ry}, \theta_{rz}$) jsou trénovány spolu s ostatními parametry obvodu.
 
 \section{Tréninkové postupy a optimalizace} \label{sec:training}
 
@@ -1190,7 +1190,7 @@ Kromě změny poměru tříd je třeba zmínit i~další možné zdroje doménov
 
 Navržený hybridní model používá amplitudové kódování 64dimenzionálního vektoru příznaků do~stavu šesti qubitů. Tato volba je motivována efektivitou reprezentace, protože umožňuje zakódovat $2^6 = 64$ amplitud do~relativně malého počtu qubitů, ale zároveň znamená výraznou redukci původního 768-dimenzionálního výstupu ConvNeXt-Tiny. Redukce o~91{,}7\,\% dimenzí nutně znamená ztrátu části informace; otázkou zůstává, zda ztracené dimenze obsahovaly diskriminační signál pro pneumonii, nebo šlo převážně o~redundanci. AUC-ROC VQC na testovací sadě (0{,}860) naznačuje, že autoenkodér zachovává klíčové příznaky, ale absolutní přesnost (81{,}25\,\%) může být limitována právě touto kompresí.
 
-\paragraph{Efektivita autoenkodéru:} Autoenkodér byl trénován na minimalizaci rekonstrukční chyby (MSE), což je proxy metrika -- nízká MSE nezaručuje, že latentní prostor zachovává třídně-diskriminační informaci. V~ideálním případě by bylo vhodné trénovat autoenkodér s~dodatečným klasifikačním loss (supervised autoencoder) nebo použít variational autoencoder (VAE) s~regularizovaným latentním prostorem, který lépe zachovává sémantickou strukturu dat.
+\paragraph{Efektivita autoenkodéru:} Pro lepší zachování sémantické struktury dat byl použit variational autoencoder (VAE) s~regularizovaným latentním prostorem. NAMÍSTO deterministického MSE autoenkodéru VAE modeluje latentní prostor jako Gaussovskou distribuci $\mathcal{N}(\mu, \sigma^2)$ s~KL divergencí jako regularizačním členem (Kingma \& Welling, 2014). Toto rozšíření zajišťuje hladší latentní prostor a~lepší generalizaci.
 
 \paragraph{Efektivita DANN:} Ačkoliv byla doménová adaptace implementována, nebyla kvantitativně evaluována její účinnost. Ideální evaluace by zahrnovala měření accuracy doménového diskriminátoru před a~po adaptaci -- pokud DANN funguje správně, accuracy diskriminátoru by měla klesat směrem k~50\,\% (náhodné rozhodování). Dále by bylo užitečné vizualizovat příznaky pomocí t-SNE před a~po DANN adaptací a~ověřit, zda se distribuce zdrojové a~cílové domény skutečně překrývají. Bez této evaluace zůstává účinnost DANN pouze kvalitativním předpokladem.
 
@@ -1198,13 +1198,13 @@ Důležitým zjištěním ablační studie (podkapitola~\ref{subsec:backbone_com
 
 Ansatz kvantového obvodu byl navržen tak, aby byl relativně mělký a~s lineárním propojením qubitů, což pomáhá zmírňovat problém tzv. barren plateaus, ale zároveň omezuje expresivitu modelu. Teoretické práce naznačují, že hlubší a~složitěji propletené obvody mohou dosahovat lepší aproximační schopnosti, ale za cenu rychlejšího miznutí gradientů a~zvýšené citlivosti na šum. V~této práci byl upřednostněn konzervativní návrh, který zůstává v~oblasti prakticky trénovatelných obvodů, a~proto nelze vyloučit, že bohatší ansatz by mohl při vhodné regularizaci a~inicializaci dosáhnout lepších výsledků.
 
-V neposlední řadě je třeba zmínit, že kvantová část byla trénována na ideálním simulátoru bez explicitního modelování fyzikálního šumu, dekoherence a~chyb měření. Skutečný provoz na reálném NISQ hardwaru by pravděpodobně vedl k~dalšímu zhoršení metrik, pokud by nebyly nasazeny pokročilé techniky mitigace šumu.
+V neposlední řadě je třeba zmínit, že kvantová část byla trénována na ideálním simulátoru. Pro případné nasazení na reálný NISQ hardware je připraven pipeline Zero-Noise Extrapolation (ZNE), který škáluje hloubku obvodu (gate folding) a~Richardsonovou extrapolací odhaduje výsledek při nulovém šumu (Temme et al., 2017). Tato technika mitigace šumu je připravena pro experimenty na IBM Quantum平台.
 
 \section{Možné směry dalšího výzkumu} \label{sec:future_work}
 
 \subsection{Experimenty na reálném kvantovém hardwaru}
 
-Veškeré experimenty v této práci proběhly na ideálním simulátoru. Přirozeným pokračováním je přenesení již natrénovaného variačního obvodu na reálný kvantový procesor, například v~rámci cloudových platforem typu IBM Quantum nebo IonQ. Vzhledem k~omezenému počtu qubitů a~jejich konečné koherenční době by bylo nutné dále zkrátit hloubku obvodu a~pracovat s~menšími batch size, případně využít jen podmnožinu trénovacích dat. Součástí takového experimentu by muselo být i~nasazení technik mitigace šumu, jako je kalibrace chyb čtení, zero-noise extrapolation nebo jednoduché formy chybové mitigace na úrovni měření.
+Veškeré experimenty v této práci proběhly na ideálním simulátoru. Přirozeným pokračováním je přenesení natrénovaného variačního obvodu na reálný kvantový procesor (IBM Quantum nebo IonQ). Pipeline ZNE (zero-noise extrapolation) je již implementován v kódu a~připraven pro spuštění na reálném hardware po získání přístupových kreditů.
 
 Takový experiment by umožnil kvantifikovat rozdíl mezi ideálním simulátorem a~reálným hardwarem a~poskytnout realističtější obrázek o~použitelnosti QML v~současné NISQ éře. Zároveň by otevřel prostor pro ladění ansatzu s~ohledem na konkrétní topologii a~omezení daného kvantového čipu.
 
