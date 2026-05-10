@@ -115,41 +115,36 @@ Run once; outputs are cached to `artifacts/features/`. All subsequent experiment
 
 ---
 
-## 2. PCA Dimensionality Reducer
+## 2. VAE Dimensionality Reducer
 
-**Type:** Scikit-learn pipeline step (classical)  
-**Framework:** scikit-learn  
-**Location:** `02_preprocessing.ipynb`
+**Type:** Variational Autoencoder (classical)  
+**Framework:** PyTorch  
+**Location:** `pneumonia_hybrid_qml.ipynb`
 
 **Role:**
-Compresses the 768-dimensional ConvNeXt-Tiny feature vector to 64 dimensions — matching the Hilbert space of a 6-qubit register (2⁶ = 64). Fit exclusively on the training split to prevent data leakage.
+Compresses the 768-dimensional ConvNeXt-Tiny feature vector to 64 dimensions using a VAE with KL regularization — matching the Hilbert space of a 6-qubit register (2^6 = 64). The probabilistic latent space provides smoother representations for the quantum classifier.
 
-**Inputs:**
-- `convnext_tiny_pca_train.npy` — shape `(4185, 768)`
-
-**Outputs:**
-- `pca_features_train.npy` — shape `(4185, 64)`
-- `pca_features_val.npy`   — shape `(1047, 64)`
-- `pca_features_test.npy`  — shape `(624, 64)`
-- `scaler.pkl` — fitted `StandardScaler`
-- `pca.pkl`    — fitted `PCA(n_components=64)`
+**Architecture:**
+- Encoder: Linear(768→256) → LeakyReLU → BatchNorm → Linear(256→128) → μ, logσ
+- Decoder: Linear(64→256) → LeakyReLU → BatchNorm → Linear(256→768)
+- Loss: MSE reconstruction + β × KL(q(z|x) || N(0,I)), β=0.001
 
 **Key settings:**
 ```python
-from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
-
-scaler = StandardScaler()
-pca    = PCA(n_components=64, random_state=6)
-
-X_train = pca.fit_transform(scaler.fit_transform(features_train))
-X_val   = pca.transform(scaler.transform(features_val))
-X_test  = pca.transform(scaler.transform(features_test))
-
-# L2 normalise for amplitude encoding
-from sklearn.preprocessing import normalize
-X_train = normalize(X_train, norm="l2")
+# VAE with reparameterization trick
+mu, logvar = encoder(x)
+std = torch.exp(0.5 * logvar)
+eps = torch.randn_like(std)
+z = mu + eps * std  # reparameterization
+reconstructed = decoder(z)
+kl_loss = -0.5 * sum(1 + logvar - mu.pow(2) - logvar.exp())
+loss = recon_loss + beta * kl_loss
 ```
+
+**Outputs:**
+- `vae_features_train.npy` — shape `(4185, 64)`
+- `vae_features_val.npy`   — shape `(1047, 64)`  
+- `vae_features_test.npy`  — shape `(624, 64)`
 
 ---
 
@@ -190,7 +185,10 @@ def circuit(x, params):
 |-----------|-------|
 | `n_qubits` | 6 |
 | `n_layers` | 3 |
-| Trainable params | 108 (3 × 6 × 3 × n_layers) |
+| Rotation params | 54 (3 × 6 × 3 Euler angles) |
+| Scale params | 6 (learnable input encoding) |
+| Measurement params | 2 (RY + RZ basis) |
+| **Total trainable params** | **62** |
 | Optimizer | Adam |
 | Initial LR | 1e-3 |
 | LR schedule | Cosine with 3-epoch warm-up |
@@ -442,20 +440,20 @@ visualisation = show_cam_on_image(img_rgb, grayscale_cam[0])
 Chest X-Ray images
         │
         ▼
-[1] ConvNeXt-Tiny extractor  ──saves──▶  convnext_tiny_pca_*.npy + scaler.pkl + pca.pkl
+[1] ConvNeXt-Tiny extractor  ──saves──▶  convnext_tiny_768_*.npy
         │
         ▼
-[2] PCA reducer          ──saves──▶  pca_features.npy + scaler.pkl + pca.pkl
+[2] VAE dimensionality reducer  ──saves──▶  vae_features_*.npy + scaler
         │
      ┌──┴──────────────────────┐
      ▼                         ▼
 [3] VQC (PennyLane)       [4] MLP baseline (PyTorch)
      │                         │
-     ├──▶ [5] IBM hardware     │
-     │         │               │
-     │    [6] Mitiq ZNE        │
-     │         │               │
-     └─────────┴───────────────┘
+      ├─▶ [5] IBM hardware    │
+     │        │               │
+     │   [6] Mitiq ZNE        │
+     │        │               │
+     └───────┴───────────────┘
                      │
                 [7] Noise sim (ablation)
                      │
