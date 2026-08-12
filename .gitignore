@@ -31,3 +31,5 @@ features
 # Keep specific thesis files
 !docs/soc.tex
 !docs/literatura.bib
+# IBM Quantum token (one per developer, never committed)
+ibm_token.txt

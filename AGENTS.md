@@ -154,7 +154,7 @@ loss = recon_loss + beta * kl_loss
 **Framework:** PennyLane 0.43+  
 **Backend (training):** `lightning.gpu` (CUDA) on Colab A100  
 **Backend (hardware eval):** `qiskit.ibm` via pennylane-qiskit  
-**Location:** `02_vqc_training.ipynb`
+**Location:** `pneumonia_hybrid_qml.ipynb` (section 7 VQC training)
 
 **Role:**
 The quantum classification layer. Receives a 64-dimensional L2-normalised feature vector, encodes it as quantum amplitudes, applies a trainable variational ansatz, and returns a scalar score ∈ [−1, 1] (expectation value of Pauli-Z on qubit 0).
@@ -207,7 +207,7 @@ def circuit(x, params):
 
 **Type:** Multi-layer perceptron (classical)  
 **Framework:** PyTorch  
-**Location:** `02_vqc_training.ipynb`
+**Location:** `pneumonia_hybrid_qml.ipynb` (section 7b / MLP baseline)
 
 **Role:**
 Reference classifier operating on the same 64-dimensional PCA features as the VQC. Used for direct performance comparison under identical input conditions.
@@ -240,9 +240,9 @@ nn.Sequential(
 
 **Type:** Remote quantum processor job  
 **Provider:** IBM Quantum Cloud  
-**Device:** `ibm_brisbane` (127-qubit Eagle R3) or `ibm_sherbrooke`  
+**Device:** current Heron r2 (e.g. `ibm_kingston`, 156 qubits) — auto-selected at runtime via `service.least_busy()`; `ibm_brisbane`/`ibm_sherbrooke` retired 2025  
 **Framework:** Qiskit IBM Runtime + pennylane-qiskit  
-**Location:** `04_ibm_hardware_eval.ipynb`
+**Location:** `pneumonia_hybrid_qml.ipynb` (sections 7.1 QPU Inference + ZNE)
 
 **Role:**
 Runs inference-only on real quantum hardware using trained VQC parameters from step 3. Evaluates a subset of the test set (~50–100 samples) to quantify the gap between ideal simulation and physical noise.
@@ -251,19 +251,19 @@ Runs inference-only on real quantum hardware using trained VQC parameters from s
 1. Load optimal `params.npy` from training
 2. Transpile PennyLane circuit to IBM native gate set (`ECR`, `RZ`, `SX`, `X`) using Qiskit transpiler (optimisation level 3)
 3. Select 6 connected low-error qubits from the device calibration map
-4. Submit via `SamplerV2` primitive inside a Qiskit Runtime session
+4. Submit via `SamplerV2` primitive in **job mode** (no Session — Session bills wall-clock time)
 5. Collect bitstring counts, compute ⟨Z₀⟩ expectation values
 
 **Key settings:**
 ```python
-from qiskit_ibm_runtime import QiskitRuntimeService, SamplerV2, Session
+from qiskit_ibm_runtime import QiskitRuntimeService, SamplerV2
 
 service = QiskitRuntimeService()
 backend = service.least_busy(operational=True, simulator=False, min_num_qubits=6)
 
-with Session(backend=backend) as session:
-    sampler = SamplerV2(mode=session)
-    job = sampler.run([transpiled_circuit], shots=1024)
+# Job mode — no Session (Session bills wall-clock time)
+sampler = SamplerV2(mode=backend)
+job = sampler.run([transpiled_circuit], shots=1024)
 ```
 
 **Notes:**
@@ -274,8 +274,8 @@ Train on simulator. Evaluate on hardware. Do not run the full training loop on I
 ## 6. Mitiq ZNE Error Mitigator
 
 **Type:** Classical post-processing agent  
-**Framework:** Mitiq 0.38+  
-**Location:** `04_ibm_hardware_eval.ipynb`
+**Framework:** Mitiq 1.0.0+  
+**Location:** `pneumonia_hybrid_qml.ipynb` (sections 7.1 QPU Inference + ZNE)
 
 **Role:**
 Applies Zero-Noise Extrapolation (ZNE) to hardware results. Runs each circuit at noise scale factors [1×, 2×, 3×] by gate-folding, then extrapolates to the zero-noise limit using Richardson extrapolation. Significantly improves raw hardware accuracy.
@@ -292,6 +292,7 @@ Applies Zero-Noise Extrapolation (ZNE) to hardware results. Runs each circuit at
 **Key settings:**
 ```python
 import mitiq
+from mitiq.zne.inference import RichardsonFactory
 
 def ibm_executor(circuit):
     # wraps SamplerV2 call, returns float expectation value
@@ -300,7 +301,7 @@ def ibm_executor(circuit):
 mitigated = mitiq.zne.execute_with_zne(
     circuit=circuit,
     executor=ibm_executor,
-    factory=mitiq.zne.RichardsonFactory(scale_factors=[1, 2, 3])
+    factory=RichardsonFactory(scale_factors=[1, 2, 3])
 )
 ```
 
@@ -310,7 +311,7 @@ mitigated = mitiq.zne.execute_with_zne(
 
 **Type:** Software simulation  
 **Framework:** PennyLane + `default.mixed` backend  
-**Location:** `02_vqc_training.ipynb` — ablation section
+**Location:** `pneumonia_hybrid_qml.ipynb` (7.1.5 FakeKingston noisy baseline; `default.mixed` ablation planned)
 
 **Role:**
 Simulates the effect of hardware noise by injecting depolarising channels after every gate. Used to produce the noise degradation curve without consuming IBM queue time.
@@ -340,7 +341,7 @@ def noisy_circuit(x, params, p_noise):
 
 **Type:** Post-processing script (classical)  
 **Framework:** NumPy + scikit-learn  
-**Location:** `03_evaluation.ipynb`
+**Location:** `pneumonia_hybrid_qml.ipynb` (section 8.1 Threshold Selection)
 
 **Role:**
 Selects the optimal classification threshold τ by maximising balanced accuracy on the **validation set only**. The chosen τ is then applied once to the test set. Prevents the data leakage present in the original version (which scanned thresholds on test data).
@@ -373,7 +374,7 @@ test_preds = (test_probs > best_tau).astype(int)
 
 **Type:** Post-processing script (classical)  
 **Framework:** scikit-learn + statsmodels + scipy  
-**Location:** `03_evaluation.ipynb`
+**Location:** `pneumonia_hybrid_qml.ipynb` (section 8) + `03b_feature_analysis.ipynb` / `03d_predictions_analysis.ipynb`
 
 **Role:**
 Produces all metrics, statistical significance tests, and confidence intervals needed for the thesis results chapter.
@@ -410,7 +411,7 @@ ci_low, ci_high = np.percentile(aucs, [2.5, 97.5])
 
 **Type:** Interpretability agent (classical)  
 **Framework:** PyTorch + `pytorch-grad-cam`  
-**Location:** `03_evaluation.ipynb`
+**Location:** `03e_gradcam_analysis.ipynb` + `pneumonia_hybrid_qml.ipynb` (Grad-CAM section)
 
 **Role:**
 Generates class activation maps showing which regions of the chest X-ray the ConvNeXt-Tiny feature extractor attends to. Provides interpretability evidence for the thesis discussion section.
@@ -474,11 +475,11 @@ Chest X-Ray images
 | Setting | Value |
 |---------|-------|
 | Python | 3.12.x |
-| PennyLane | 0.43.2 |
+| PennyLane | 0.45.1 |
 | PyTorch | 2.9.0+cu126 |
-| Qiskit | 1.x |
-| Qiskit IBM Runtime | 0.20+ |
-| Mitiq | 0.38+ |
+| Qiskit | 2.x |
+| Qiskit IBM Runtime | 0.48+ |
+| Mitiq | 1.0.0 |
 | scikit-learn | 1.6.1 |
 | Random seed | `6` (NumPy + PyTorch + PennyLane) |
 | Colab GPU | NVIDIA A100 40 GB (training), T4 (extraction) |

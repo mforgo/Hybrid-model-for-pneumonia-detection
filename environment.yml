@@ -383,8 +383,9 @@ dependencies:
   - zstandard=0.23.0=py310ha75aee5_2
   - zstd=1.5.7=hb8e6e7a_2
   - pip:
-    - qiskit>=1.0
-    - qiskit-ibm-runtime>=0.20
-    - pennylane-qiskit>=0.44
-    - mitiq>=0.38
+    - qiskit>=2.0
+    - qiskit-ibm-runtime>=0.47
+    - qiskit-aer>=0.17
+    - pennylane-qiskit>=0.45
+    - mitiq>=1.0
 prefix: /home/mforgo/miniconda3/envs/quantum-pneumonia

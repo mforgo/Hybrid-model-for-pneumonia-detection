@@ -119,10 +119,9 @@ Install the main dependencies (on Colab this is done at the top of the notebook)
 
 ```bash
 pip install \
-  pennylane==0.44.1 pennylane-qiskit==0.44.1 pennylane-lightning-gpu==0.44.0 custatevec-cu12 \
+  pennylane==0.45.1 pennylane-qiskit==0.45.0 pennylane-lightning-gpu==0.45.0 custatevec-cu12 \
   torch torchvision \
-  qiskit qiskit-ibm-runtime qiskit-machine-learning==0.9.0 \
-  mitiq \
+  qiskit qiskit-ibm-runtime>=0.47 qiskit-aer mitiq==1.0.0 \
   grad-cam \
   scikit-learn scikit-image \
   numpy scipy pandas matplotlib seaborn \

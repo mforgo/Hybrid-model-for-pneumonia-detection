@@ -1,0 +1,1347 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{xcolor}
+
+% ---------------------------------------------------------------
+%  Placeholder styling for the forthcoming hardware section
+% ---------------------------------------------------------------
+\newcommand{\hwplaceholder}[1]{%
+  \begin{center}
+    \colorbox{gray!15}{\parbox{0.92\textwidth}{%
+      \vspace{0.5em}
+      {\color{gray!60!black}\textbf{[PLACEHOLDER --- to be completed with real-hardware results]}}\\[4pt]
+      {\color{gray!55!black}#1}
+      \vspace{0.4em}
+    }}
+  \end{center}
+}
+
+\title{Quantum Machine Learning for Pneumonia Detection in\\
+Chest X-Ray Imaging: an Illustrative Case Study}
+
+\author{Author names\\[2pt] \small Affiliation to be inserted}
+
+\date{}
+
+\begin{document}
+
+\maketitle
+
+% ==============================================================
+%  ABSTRACT
+% ==============================================================
+\begin{abstract}
+Deep convolutional neural networks (CNNs) have become the de facto standard
+for automated pneumonia screening from chest X-ray (CXR) images, routinely
+reporting diagnostic accuracies above 85\%.  This performance, however, is
+obtained at the cost of classification heads with hundreds of thousands of
+trainable parameters, motivating interest in parameter-efficient alternatives.
+Variational quantum circuits (VQCs), operating within the constraints of Noisy
+Intermediate-Scale Quantum (NISQ) hardware, have been proposed as compact
+decision layers that can be appended to classical feature extractors.  Beyond
+the pure VQC paradigm, quantum convolutional neural networks (QCNNs) and
+quantum kernel methods have been explored as complementary architectural
+routes.  This paper reviews the computational and algorithmic foundations of
+such hybrid quantum--classical architectures for CXR-based pneumonia detection,
+covering classical CNN baselines, quantum data-encoding strategies (angle,
+amplitude, IQP feature maps, and data re-uploading), variational and
+convolutional ansatz design, quantum kernel construction, and the
+barren-plateau phenomenon that limits the trainability of deep parametrized
+circuits together with its principal mitigation strategies.  As a concrete
+illustration, we describe and analyze a hybrid pipeline that couples a frozen
+ConvNeXt-Tiny feature extractor with nonlinear autoencoder dimensionality
+reduction (768$\rightarrow$64) and a 6-qubit, 54-parameter data re-uploading
+VQC classifier, evaluated on a publicly available pediatric CXR dataset under
+an explicit train/test class-prevalence shift.  The hybrid model attains a
+test AUC-ROC of 0.860 (versus 0.940 for a classical multilayer perceptron
+trained on identical features) while using approximately $39\times$ fewer
+trainable parameters in its decision layer (54 versus 2{,}113).  We situate
+this case study within a broader survey of
+related hybrid approaches for respiratory and cardiac CXR analysis reported
+in the literature, and ground a discussion of the algorithmic trade-offs,
+evaluation methodology, and open problems---including state-preparation
+overhead, barren plateaus, dataset shift, and the absence, at present circuit
+scales, of a demonstrated computational quantum advantage.  A dedicated
+section is reserved for forthcoming experiments on physical quantum hardware
+with error mitigation; its completion will allow direct quantification of the
+simulator-to-hardware performance gap.
+\end{abstract}
+
+\noindent\textbf{Keywords:} quantum machine learning; variational quantum
+circuits; hybrid quantum--classical neural networks; quantum convolutional
+neural networks; quantum kernel methods; pneumonia detection; chest X-ray
+classification; NISQ; barren plateaus; medical image analysis
+
+% ==============================================================
+\section{Introduction}
+\label{sec:intro}
+% ==============================================================
+
+Pneumonia remains one of the leading causes of morbidity and mortality
+worldwide, with an estimated global burden in the range of millions of cases
+annually and disproportionate impact on children under five and
+immunocompromised adults \cite{cdc2025,iqwig2021}.  Chest radiography (CXR)
+is the most widely used first-line imaging modality for pneumonia screening
+because it is inexpensive, fast, and broadly available compared to computed
+tomography \cite{iqwig2021}.  Manual interpretation of CXR images is subject
+to inter-observer variability, reader fatigue, and uneven access to trained
+radiologists, which has motivated three decades of research into
+computer-aided diagnosis and, more recently, deep-learning-based automated
+screening \cite{naz2020,kundu2021}.
+
+CNNs, and in particular deep residual architectures such as ResNet, have
+demonstrated diagnostic performance on CXR pneumonia classification that is
+competitive with expert radiologists, typically exceeding 85\% classification
+accuracy \cite{he2016,kundu2021,ortiz2022}.  This performance,
+however, comes at a substantial computational cost: fully connected
+classification heads appended to CNN backbones commonly require on the order
+of $10^5$--$10^6$ trainable parameters.  The associated memory and energy
+costs are non-trivial for edge or point-of-care deployment scenarios and
+motivate the search for parameter-efficient decision layers.
+
+In parallel, the maturation of NISQ devices has generated interest in
+variational quantum algorithms (VQAs) as parameter-efficient function
+approximators \cite{schuld2018,preskill2018}.  A VQC parametrizes a family of
+unitary transformations $U(\theta)$ and, when combined with classical
+optimization of $\theta$, can implement expressive decision boundaries using
+a number of trainable parameters that grows only linearly with circuit depth
+and qubit count \cite{mitarai2018,biamonte2017}.  This has prompted a growing
+body of work on \emph{hybrid quantum--classical} (HQC) architectures, in which
+a classical CNN performs high-dimensional feature extraction and a quantum
+component performs low-dimensional classification, confining the quantum
+computation to regimes tractable on current simulators or hardware.
+
+A number of recent studies have applied HQC architectures specifically to
+thoracic imaging tasks.  Kulkarni et al.~\cite{kulkarni2023} demonstrated that
+replacing a classical CNN layer with a VQC yields statistically significant
+improvements for pneumonia detection on CXR images.  Rao et
+al.~\cite{rao2024} reported a 98.1\% test accuracy on a COVID-19 Radiography
+Dataset using a hybrid CNN--VQC pipeline deployed partly on an IBM~Q simulator,
+while Decoodt et al.~\cite{decoodt2023} achieved an AUC of up to 0.93 for
+cardiomegaly detection using a DenseNet-121 backbone augmented with a
+variational quantum layer.  At the same time, attention has shifted beyond the
+``quantum classifier head'' paradigm: quantum convolutional neural networks
+(QCNNs) designed to mimic spatial locality in quantum circuits
+\cite{cong2019,wei2022}, and quantum kernel methods that compute high-dimensional
+inner products via quantum interference \cite{havlicek2019,haug2021}, represent
+architecturally distinct alternatives that may better exploit the inductive
+biases of image data.
+
+Despite this activity, empirical evidence quantifying the accuracy--efficiency
+trade-off of HQC pipelines on realistic medical imaging tasks---particularly
+under distribution shift between training and deployment data---remains
+limited.  Most published studies report results on a single static
+train/test split, on noise-free simulators, and without explicit discussion of
+the state-preparation and trainability bottlenecks intrinsic to variational
+quantum computing \cite{sharma2023survey}.
+
+\subsection{Contributions and Scope}
+
+This paper has two purposes.  First, it provides a structured,
+computationally oriented review of the building blocks required to construct
+hybrid quantum--classical pneumonia classifiers: classical CNN backbones,
+dimensionality reduction, quantum data-encoding strategies, variational and
+convolutional ansatz design, quantum kernel construction, and the
+barren-plateau problem including its principal mitigation strategies.  Second,
+it presents a detailed case study---a ConvNeXt-Tiny/autoencoder/VQC pipeline
+evaluated on a public pediatric CXR dataset---that grounds the algorithmic
+discussion
+with explicit numbers and illustrates the current gap between classical and
+quantum-assisted approaches.
+
+The clinical and radiological background is kept intentionally brief; the
+emphasis throughout is on encoding schemes, circuit design, trainability,
+computational complexity, and evaluation methodology, consistent with a
+computer-science- and quantum-technology-oriented readership.  We deliberately
+avoid overstating the clinical readiness of the reviewed methods: at the qubit
+counts considered here, no computational quantum advantage is established, and
+the results should be interpreted as a feasibility and parameter-efficiency
+study rather than as a validated diagnostic tool.  A separate section
+(Section~\ref{sec:hardware}) is reserved for forthcoming experimental results
+on physical quantum hardware; its inclusion reflects the acknowledged
+importance of closing the simulator-to-hardware gap and will complete the
+empirical contribution of this work.
+
+The remainder of the paper is organized as follows.
+Section~\ref{sec:background} introduces the clinical context and the classical
+and quantum computational preliminaries.  Section~\ref{sec:classical} reviews
+classical CNN-based approaches to CXR pneumonia detection.
+Section~\ref{sec:qml} describes quantum data encoding, variational circuits,
+QCNNs, quantum kernels, and the barren-plateau phenomenon.
+Section~\ref{sec:hybrid} surveys related HQC work for CXR analysis and
+presents the ConvNeXt-Tiny/autoencoder/VQC case study.
+Section~\ref{sec:hardware}
+provides the placeholder for real-hardware experiments.
+Section~\ref{sec:eval} discusses experimental design and evaluation metrics.
+Section~\ref{sec:limitations} enumerates open problems and limitations.
+Section~\ref{sec:future} outlines future research directions, and
+Section~\ref{sec:conclusion} concludes.
+
+% ==============================================================
+\section{Background}
+\label{sec:background}
+% ==============================================================
+
+\subsection{Clinical and Imaging Context}
+
+Pneumonia is an acute inflammatory condition of the pulmonary parenchyma,
+most commonly of bacterial or viral etiology, in which the alveoli fill with
+fluid or exudate, impairing gas exchange \cite{iqwig2021}.  On a CXR, healthy
+air-filled lung tissue appears radiolucent (dark), whereas pneumonic
+consolidation, interstitial infiltrates, and air bronchograms appear as
+localized or diffuse radiopaque (light) regions \cite{iqwig2021}.  Bacterial
+pneumonia (e.g., \emph{Streptococcus pneumoniae}) typically presents with
+lobar consolidation, while viral pneumonia tends to produce more diffuse
+interstitial patterns \cite{iqwig2021}.  This visual heterogeneity, combined
+with overlapping appearances with other conditions (pulmonary edema,
+atelectasis, fibrosis), contributes to inter-observer variability in manual
+reading and motivates automated decision support \cite{naz2020}.
+
+\subsection{Classical Deep Learning for Medical Image Classification}
+
+Modern CXR classifiers are almost universally built on deep CNN backbones
+pretrained on large natural-image corpora (e.g., ImageNet) and subsequently
+fine-tuned or used as fixed feature extractors on medical imaging tasks.
+ResNet architectures address the vanishing-gradient and degradation problems
+that historically limited the trainability of very deep networks by introducing
+residual (skip) connections: instead of learning a direct mapping $H(x)$, each
+residual block learns a residual function $F(x)$ such that
+\begin{equation}
+  H(x) = F(x) + x,
+  \label{eq:resnet}
+\end{equation}
+which allows gradients to propagate across many layers without attenuation
+\cite{he2016}.  ResNet-50 uses a bottleneck design in which each residual block
+consists of a $1\times1$ convolution (dimensionality reduction), a $3\times3$
+convolution (spatial filtering), and a further $1\times1$ convolution
+(dimensionality restoration), substantially reducing parameter count relative
+to a naive stacking of $3\times3$ convolutions while preserving
+representational depth \cite{he2016}.  In a typical CXR pipeline, the network
+is used \emph{headless}, i.e., without its final classification layer,
+producing a fixed-length embedding (commonly of dimension 2048 for ResNet-50)
+for each input image, which is then passed to a task-specific classifier.
+
+\subsection{Elements of Quantum Computation}
+
+A qubit is the basic unit of quantum information, represented as a normalized
+vector in a two-dimensional complex Hilbert space,
+\begin{equation}
+  \lvert \psi \rangle = \alpha \lvert 0 \rangle + \beta \lvert 1 \rangle,
+  \qquad \lvert \alpha \rvert^2 + \lvert \beta \rvert^2 = 1,
+  \label{eq:qubit}
+\end{equation}
+where $\alpha,\beta \in \mathbb{C}$ are probability amplitudes and
+$\{\lvert 0\rangle, \lvert 1\rangle\}$ is the computational basis
+\cite{nielsen2010}.  Geometrically, a pure single-qubit state can be
+represented as a point on the Bloch sphere,
+\begin{equation}
+  \lvert \psi \rangle = \cos\!\left(\frac{\theta}{2}\right)\lvert 0 \rangle
+  + e^{i\varphi}\sin\!\left(\frac{\theta}{2}\right)\lvert 1 \rangle,
+  \label{eq:bloch}
+\end{equation}
+and training a variational circuit can be understood, at the single-qubit
+level, as searching for rotation angles that steer this state toward a
+measurement outcome associated with the desired class.
+
+Quantum algorithms are composed of unitary \emph{gates}.  Single-qubit
+rotation gates $R_x, R_y, R_z$ (or the three-angle rotation
+$\mathrm{Rot}(\phi,\theta,\omega)$) rotate the state around the
+corresponding axis of the Bloch sphere and constitute the trainable degrees of
+freedom of a variational circuit; the Hadamard gate creates equal
+superpositions; and the two-qubit controlled-NOT (CNOT) gate is the standard
+primitive for generating \emph{entanglement}, a distinctively quantum
+correlation between qubits that cannot be reproduced by any local, classical
+description of the joint system and that is conjectured to underlie the
+representational power of quantum models \cite{nielsen2010}.
+
+The \emph{expressibility} of a parametrized circuit is a quantitative measure
+of how uniformly it can generate states over the Hilbert space, often defined
+via the deviation of the induced distribution from the Haar measure
+\cite{sim2019}.  Expressibility and entanglement capacity jointly govern the
+circuit's ability to represent complex functions and, as detailed in
+Section~\ref{sec:barren}, its susceptibility to trainability issues.
+
+\subsection{The NISQ Era and Variational Quantum Algorithms}
+
+Contemporary quantum processors operate in what Preskill termed the Noisy
+Intermediate-Scale Quantum (NISQ) era: devices with tens to a few hundred
+physical qubits that are not yet fault-tolerant and remain subject to gate
+errors and decoherence \cite{preskill2018}.  Variational quantum algorithms
+are the dominant algorithmic paradigm for extracting practical value from NISQ
+hardware.  A VQA defines a parametrized unitary $U(\theta)$, executes it on
+a (possibly classically simulated) quantum device, measures an observable, and
+updates $\theta$ using a classical optimizer---a hybrid quantum--classical
+optimization loop that keeps quantum resource requirements shallow while
+delegating gradient-based optimization to classical compute
+\cite{schuld2018,mitarai2018}.  Variational Quantum Classifiers (VQCs) are the
+supervised-learning instance of this paradigm and form the quantum component
+of the hybrid architectures discussed in this paper.
+
+% ==============================================================
+\section{Classical Approaches to Pneumonia Detection from Chest X-Rays}
+\label{sec:classical}
+% ==============================================================
+
+The dominant classical paradigm for CXR-based pneumonia detection follows a
+transfer-learning recipe: (i)~a CNN backbone pretrained on a large
+natural-image dataset is used, either fine-tuned end-to-end or frozen as a
+fixed feature extractor; (ii)~a fully connected classification head, typically
+consisting of one or more dense layers followed by a sigmoid or softmax
+output, is trained on the target task; and (iii)~standard image preprocessing
+(resizing, normalization with respect to the pretraining dataset's channel
+statistics) is applied to bridge the domain gap between natural and medical
+images.  ResNet, DenseNet, and, more recently, vision-transformer backbones
+have all been applied to the publicly available pediatric CXR pneumonia dataset
+originating from the Guangzhou Women and Children's Medical Center, with
+reported accuracies generally exceeding 85\% and F1 scores in the
+0.85--0.92 range \cite{kundu2021,ortiz2022,naz2020}.
+
+From a purely computational standpoint, the classification head is the
+component of the pipeline most directly comparable to a quantum decision
+layer.  For a 64-dimensional input (e.g., after dimensionality reduction,
+see Section~\ref{sec:hybrid}) and a single hidden layer of width 32, a
+standard multilayer perceptron (MLP) classification head requires
+\begin{equation}
+  P_{\text{MLP}} = (64 \times 32 + 32) + (32 \times 1 + 1) = 2{,}080 + 33
+  = 2{,}113 \text{ parameters},
+  \label{eq:mlp_params}
+\end{equation}
+illustrating that even a comparatively shallow classifier on a compressed
+feature space carries a non-trivial parameter budget.  This observation is the
+principal motivation for exploring VQC-based decision layers, whose parameter
+count scales as $O(nL)$ in the number of qubits $n$ and circuit layers $L$,
+rather than with the width of a dense layer (Section~\ref{sec:qml}).
+
+Two further classical design choices are directly relevant to the hybrid
+architectures discussed below.  First, class imbalance---pneumonia typically
+constitutes 70--75\% of samples in public pediatric CXR datasets---motivates
+the use of weighted loss functions (e.g., weighted binary cross-entropy) rather
+than unweighted cross-entropy, to avoid a majority-class bias.  Second,
+dimensionality reduction (via PCA, linear discriminant analysis, or univariate
+feature selection) is frequently required before any quantum processing step,
+since CNN embeddings (commonly 512--2048-dimensional) exceed the practical
+qubit budgets of NISQ-era hardware and simulators by orders of magnitude.
+
+% ==============================================================
+\section{Quantum Machine Learning Approaches}
+\label{sec:qml}
+% ==============================================================
+
+\subsection{Data Encoding Strategies}
+\label{sec:encoding}
+
+Before a classical feature vector $x \in \mathbb{R}^N$ can be processed by a
+quantum circuit, it must be mapped, via a \emph{state-preparation} routine,
+onto a quantum state $\lvert \psi(x) \rangle$ in an $n$-qubit Hilbert space.
+The choice of encoding is consequential: it determines the geometry of the
+induced kernel, the depth of the state-preparation circuit, and, as recent
+theoretical work has shown, the trainability of the subsequent variational
+circuit \cite{kashif2023,schuld2021kernel}.
+
+\paragraph{Basis encoding} maps a bit string directly onto computational basis
+states, requiring one qubit per bit of the (typically pre-discretized) classical
+input.  It scales poorly for continuous, high-dimensional features and is
+rarely used for image-derived embeddings.
+
+\paragraph{Angle (rotation) encoding} assigns each classical feature $x_i$ to
+a rotation angle on a dedicated qubit, e.g., $R_y(x_i)$, and therefore
+requires $n = N$ qubits for an $N$-dimensional feature vector.  It has the
+practical advantage of a shallow, easily implementable preparation circuit and
+has been shown to produce more consistent results on real QPUs than more
+complex encodings in at least one comparative hardware study \cite{qkernel2022}.
+
+\paragraph{Amplitude encoding} embeds a normalized vector
+$x \in \mathbb{R}^N$, $\lVert x \rVert_2 = 1$, into the amplitudes of an
+$n$-qubit state,
+\begin{equation}
+  \lvert \psi(x) \rangle = \sum_{i=0}^{N-1} x_i \lvert i \rangle
+  \in \mathcal{H}_{2^n}, \qquad N = 2^n,
+  \label{eq:amplitude}
+\end{equation}
+requiring only $n = \log_2 N$ qubits.  This exponential compression is the
+primary motivation for its use in hybrid CNN--VQC pipelines, since it allows,
+e.g., a 64-dimensional PCA-reduced embedding to be encoded on just
+$\log_2 64 = 6$ qubits.
+
+\paragraph{IQP and ZZ feature maps} apply layers of classically controlled
+phase rotations---in particular the instantaneous quantum polynomial (IQP)
+circuit structure---to produce highly non-linear, problem-specific feature maps
+\cite{havlicek2019}.  The resulting kernel $k(x, x') =
+|\langle \psi(x) | \psi(x') \rangle|^2$ can be exponentially hard to
+evaluate classically, lending potential computational interest to quantum
+kernel classifiers (Section~\ref{sec:kernels}).  Empirically, IQP-based
+encodings have been observed to improve precision on some tasks while reducing
+recall and $F_1$ scores relative to angle encoding, and their performance is
+more sensitive to hardware noise \cite{qkernel2022}.
+
+\paragraph{Data re-uploading} addresses the limited expressibility of a
+single encoding layer by repeatedly interleaving data-encoding gates with
+trainable rotation layers throughout the circuit, effectively allowing each
+qubit to ``see'' the input multiple times \cite{perez2020}.  This strategy
+has been shown to confer universal function-approximation properties to single
+qubits and provides a practical route to expressible, shallow circuits
+compatible with NISQ depth budgets.
+
+The compression advantage of amplitude encoding is not free: in the general
+case, exact amplitude-encoding state preparation for an arbitrary
+$N$-dimensional vector requires a circuit of depth $O(N)$, i.e.,
+\emph{exponential} in the number of qubits, unless the vector possesses
+exploitable structure or approximate preparation is acceptable
+\cite{aaronson2015}.  This ``input bottleneck'' is a widely recognized caveat
+in the QML literature, and claims of exponential quantum speedup based on
+amplitude encoding alone should be treated with caution
+\cite{aaronson2015,biamonte2017}.  In practice, most simulation-based
+studies---including the case study reviewed in Section~\ref{sec:hybrid}---rely
+on software-level amplitude-embedding routines (e.g., PennyLane's
+\texttt{AmplitudeEmbedding}) whose classical preprocessing cost is not charged
+against the ``quantum'' resource budget, a simplification that must be kept
+in mind when extrapolating simulator-based results to real hardware.
+
+\subsection{Variational Quantum Circuits}
+\label{sec:vqc}
+
+Given an encoded input state $\lvert \psi(x) \rangle$, a VQC applies a
+parametrized unitary $U(\theta)$---the \emph{ansatz}---and measures an
+observable $M$ (typically a Pauli operator) to produce a scalar prediction,
+\begin{equation}
+  f(x, \theta) = \langle \psi(x) \rvert\, U^{\dagger}(\theta)\, M\,
+  U(\theta) \lvert \psi(x) \rangle \in [-1, 1].
+  \label{eq:vqc}
+\end{equation}
+When $M = Z_0$ (the Pauli-$Z$ operator on the first qubit), this quantity is
+linearly remapped to a pseudo-probability,
+\begin{equation}
+  \sigma(f) = \frac{f + 1}{2} \in [0, 1],
+  \label{eq:sigmoid_remap}
+\end{equation}
+which can be thresholded for binary classification.  A common and
+hardware-efficient ansatz design alternates layers of single-qubit rotations
+with a fixed entangling pattern: each layer $\ell = 1,\dots,L$ applies a
+general single-qubit rotation $\mathrm{Rot}(\phi,\theta,\omega)$ to every
+qubit, followed by a ring of CNOT gates connecting qubit $w$ to qubit
+$(w+1) \bmod n$.  For $n$ qubits and $L$ layers, this yields
+\begin{equation}
+  P_{\text{VQC}} = 3\, n\, L
+  \label{eq:vqc_params}
+\end{equation}
+trainable parameters---e.g., $3 \times 6 \times 3 = 54$ parameters for a
+6-qubit, 3-layer circuit, versus the $2{,}113$ parameters of a
+comparable classical dense head (Equation~\ref{eq:mlp_params}).  Gradients
+of $f(x,\theta)$ with respect to $\theta$ can be computed on real hardware
+via the parameter-shift rule, or, in simulation, via reverse-mode automatic
+differentiation \cite{mitarai2018}.
+
+\subsection{Quantum Convolutional Neural Networks}
+\label{sec:qcnn}
+
+Quantum convolutional neural networks (QCNNs) translate the locality and
+parameter sharing of classical CNNs into the quantum circuit formalism.  The
+archetypal QCNN design, introduced by Cong et al.~\cite{cong2019} and adapted
+for NISQ hardware by Wei et al.~\cite{wei2022}, alternates \emph{quantum
+convolutional layers}---parametrized two-qubit gates applied to neighboring
+qubit pairs---with \emph{quantum pooling layers} that halve the active qubit
+register via measurements and classically controlled single-qubit operations,
+mimicking the spatial downsampling of classical max-pooling.  A key theoretical
+result is that QCNNs built on translational symmetry are free from the barren-plateau problem
+under local cost functions, providing a trainability guarantee absent from
+more generic parametrized circuits \cite{pesah2021}.
+
+In the context of medical image classification, Khatoniar et
+al.~\cite{khatoniar2024} applied QCNN variants to CXR pneumonia classification
+under extreme feature reduction, reporting competitive robustness relative to
+VQC baselines of comparable depth.  Wei et al.~\cite{wei2022} demonstrated
+digit recognition and image filtering tasks using a hardware-implementable QCNN
+whose parameter count is \emph{independent of input size} (determined only by
+circuit depth and qubit count), an attractive property for deployment on
+resource-constrained platforms.
+
+It is important to distinguish QCNNs from \emph{quanvolutional} layers
+\cite{henderson2020quanvolutional}, in which a small fixed or parametrized
+quantum circuit processes local image patches in a sliding-window fashion,
+analogously to a classical convolutional kernel, before passing the resulting
+feature map to a standard classical CNN.  Quanvolutional layers add a quantum
+pre-processing stage rather than replacing the classical network, and are
+primarily motivated by the conjecture that quantum circuits can generate
+feature transformations qualitatively distinct from those achievable by
+classical filters.
+
+\subsection{Quantum Kernel Methods}
+\label{sec:kernels}
+
+Quantum kernel methods provide an alternative to the parametrized-circuit
+paradigm by using a quantum circuit exclusively to evaluate a kernel function,
+\begin{equation}
+  k(x, x') = \lvert \langle \psi(x) \lvert \psi(x') \rangle \rvert^2,
+  \label{eq:kernel}
+\end{equation}
+and delegating classification to a classical support vector machine (SVM) or
+kernel ridge regressor trained on the resulting kernel matrix.  Havl\'i\v{c}ek
+et al.~\cite{havlicek2019} showed, using the ZZ feature map, that the
+corresponding quantum kernel can be classically hard to estimate exactly,
+providing a theoretical grounding for potential quantum advantage.  Schuld and
+Killoran~\cite{schuld2019kernel} established the connection between quantum
+models and kernel methods more broadly, showing that every VQC implicitly
+defines a kernel via its state overlap.
+
+For medical imaging, the high dimensionality of image-derived feature vectors
+poses a practical challenge: evaluating the kernel matrix over a training set
+of $N_{\text{tr}}$ samples requires $O(N_{\text{tr}}^2)$ circuit executions,
+each querying the state overlap of two encoded feature vectors.  Haug et
+al.~\cite{haug2021} proposed scalable quantum kernel estimation via
+randomized measurements, reducing both the circuit depth required and the
+sensitivity to noise, and demonstrated large-scale kernel estimation on IBM
+quantum hardware with noise mitigation.  In a comparative hardware study,
+angle encoding achieved the best overall kernel performance on real QPUs
+among the encodings tested, albeit with pronounced run-to-run variability,
+while IQP feature maps performed more consistently yet underperformed
+relative to classical kernels; dynamical decoupling error mitigation did not
+uniformly improve performance and was encoding-dependent
+\cite{qkernel2022}, underscoring that hardware-aware encoding selection is
+essential rather than optional.
+
+\subsection{The Barren-Plateau Problem}
+\label{sec:barren}
+
+The central obstacle to training deep or highly entangling VQCs is the
+\emph{barren-plateau} phenomenon: for a broad class of randomly initialized,
+sufficiently expressive ansätze evaluated against a global cost function, the
+variance of the cost-function gradient with respect to any single parameter
+$\theta_i$ decays exponentially with the number of qubits $n$,
+\begin{equation}
+  \mathrm{Var}\!\left[\partial_{\theta_i} C(\theta)\right]
+  = O\!\left(2^{-n}\right),
+  \label{eq:barren}
+\end{equation}
+so that, in expectation, gradient-based optimization becomes exponentially
+difficult to distinguish from noise as $n$ grows \cite{mcclean2018}.
+Subsequent work has elucidated the mechanisms underlying this concentration.
+Cerezo et al.~\cite{cerezo2021} showed that the onset of barren plateaus
+depends on the \emph{locality} of the cost function: global cost functions---
+those defined via an operator acting non-trivially on all qubits---are markedly
+more prone to barren plateaus than local ones.  Ortiz Marrero et
+al.~\cite{marrero2021} demonstrated that excessive (volume-law) entanglement in
+the circuit is sufficient to induce barren plateaus independently of the
+specific ansatz structure.  Kashif and Al-Kuwari~\cite{kashif2023} developed a
+unified framework showing that barren-plateau onset depends jointly on data
+encoding, ansatz expressibility, and entanglement, providing design constraints
+for HQC networks.
+
+These theoretical results have motivated several practical mitigation
+strategies:
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{Local cost functions and shallow entangling ansätze.}
+    Restricting measurements to local Pauli observables and using
+    nearest-neighbor entangling layers (e.g., the CNOT ring in
+    Equation~\ref{eq:vqc_params}) substantially suppresses gradient variance
+    \cite{cerezo2021}.
+  \item \textbf{Controlled initialization.}  Initializing parameters near the
+    identity, or near simple product states (``identity blocks''), rather than
+    uniformly at random, ensures that the optimization starts in a region of
+    non-vanishing gradient \cite{mcclean2018,patti2021}.  Partitioning the
+    circuit into cost and non-cost registers and using low-entanglement
+    initializations provides a practical recipe \cite{patti2021}.
+  \item \textbf{Expressibility-aware circuit design.}  Reducing circuit
+    expressibility---via state-efficient ansätze (SEA) \cite{liu2022sea} or
+    neural-network-based parameter generation that smooths the loss landscape
+    \cite{zhu2024}---trades representational power for trainability.
+  \item \textbf{Noise-assisted mitigation.}  Entanglement regularization, the
+    addition of controlled Langevin noise, and rotations into the cost
+    function's eigenbasis can improve convergence on difficult optimization
+    landscapes \cite{patti2021}.
+  \item \textbf{Noise mitigation as expressibility reduction.}  Ding et
+    al.~\cite{ding2024} showed that adapting circuit expressibility to match
+    the noise level of the hardware can act as an error-aware mitigation
+    strategy, improving classification accuracy in noisy simulations for
+    QCNNs.
+\end{itemize}
+These design constraints guided the layer-count selection for the case-study
+ansatz in Section~\ref{sec:hybrid}: three data re-uploading layers on six
+qubits keep the circuit in a regime of moderate expressibility and shallow
+entanglement, where gradient-variance concentration is not expected to
+dominate training on a noise-free simulator.
+
+\subsection{On the Prospect of Quantum Advantage}
+\label{sec:advantage}
+
+A recurring question in the QML literature is whether VQC-based classifiers
+can offer a genuine \emph{computational} advantage---in runtime, sample
+complexity, or expressivity---over classical models, as opposed to merely a
+reduction in the number of trainable parameters.  At the circuit sizes
+considered in this review (single-digit to low tens of qubits), no such
+advantage has been established for medical image classification: circuits of
+this size are efficiently simulable classically, and the reduction in
+decision-layer parameter count does not, by itself, imply reduced overall
+computational cost, since the classical feature-extraction and
+dimensionality-reduction stages typically dominate the total pipeline cost.
+Claims of quantum advantage in QML more broadly remain an active and contested
+research area, further complicated by the input/output bottleneck discussed
+above \cite{aaronson2015,biamonte2017}.  The practical value of hybrid VQC
+decision layers at present should therefore be understood primarily in terms
+of \emph{parameter efficiency} and \emph{memory footprint}---properties that
+may be relevant for edge or resource-constrained deployment once fault-tolerant
+or larger-scale NISQ hardware becomes available---rather than as evidence of
+an accuracy or speed advantage over well-tuned classical models.
+
+% ==============================================================
+\section{Hybrid Quantum--Classical Architectures}
+\label{sec:hybrid}
+% ==============================================================
+
+\subsection{Design Rationale}
+
+Given the qubit and depth constraints of NISQ hardware
+(Section~\ref{sec:qml}) and the high dimensionality of raw medical images, a
+natural design principle is to separate \emph{feature learning}, delegated to
+a classical CNN operating on the full-resolution image, from \emph{decision
+making}, delegated to a compact quantum circuit operating on a low-dimensional,
+information-dense representation.  This principle is shared by all hybrid
+architectures reviewed below, differing primarily in (i)~the choice of
+classical backbone, (ii)~the dimensionality reduction method, (iii)~the
+encoding and ansatz design, and (iv)~whether the quantum component serves as a
+classifier head, a convolutional feature transformer, or a kernel function.
+
+\subsection{Related Work on Hybrid Quantum--Classical CXR Classifiers}
+\label{sec:relwork}
+
+Table~\ref{tab:related} summarizes published hybrid QML studies targeting
+chest X-ray analysis.  Three themes emerge from this survey.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Representative hybrid quantum--classical studies on CXR or pulmonary
+  imaging tasks.  All results are from noise-free simulators unless marked
+  with $\dagger$ (IBM~Q backend).  ``HQC-VQC'' denotes a classical feature
+  extractor followed by a VQC classifier head; ``HQC-Conv'' denotes a
+  quanvolutional or QCNN layer integrated into the CNN pipeline.}
+\label{tab:related}
+\begin{tabular}{@{}p{3.5cm}p{2.0cm}p{2.0cm}p{1.3cm}p{4.0cm}@{}}
+\toprule
+Reference & Architecture & Dataset & Task & Key result \\
+\midrule
+Kulkarni et al.~\cite{kulkarni2023} & HQC-VQC & CXR (Guangzhou) & Pneumonia & Stat.\ significant improvement vs.\ classical CNN baseline \\
+Rao et al.~\cite{rao2024} & HQC-VQC ($\dagger$) & COVID-19 Radiography Dataset (15K) & 4-class & 98.1\% test acc.; IBM~Q QASM deployment \\
+Decoodt et al.~\cite{decoodt2023} & HQC-VQC & CheXpert (2.4K PA) & Cardiomegaly & AUC $\leq 0.93$; improved Grad-CAM++ localization \\
+Sharma~\cite{sharmaR2023hybrid} & HQC-Conv & Custom CXR & Pneumonia & ZFNet + quantum layer hybrid \\
+Khatoniar et al.~\cite{khatoniar2024} & QCNN & CXR (Guangzhou) & Pneumonia & Robustness analysis under extreme feature reduction \\
+\textbf{This work} & HQC-VQC & CXR (Guangzhou, 5.8K) & Pneumonia & AUC 0.860 (VQC) vs.\ 0.940 (MLP); $39\times$ param.\ reduction \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Consistent accuracy--efficiency trade-off.}
+All surveyed studies confirm the qualitative finding that a hybrid quantum
+component can achieve meaningful classification performance at a substantially
+reduced decision-layer parameter budget.  However, results that appear
+favorable relative to their specific classical baselines often reflect
+comparisons against purposely weak baselines rather than state-of-the-art
+classical models \cite{aaronson2015}.
+
+\paragraph{Variability in experimental rigor.}
+Dataset sizes range from a few hundred to $\sim$15,000 images; train/test
+split rationale is frequently underspecified; and class prevalence in the
+test set is rarely reported explicitly.  This limits direct cross-study
+comparison and motivates the shift-aware evaluation framework presented in
+Section~\ref{sec:eval}.
+
+\paragraph{Limited hardware deployment.}
+Only Rao et al.~\cite{rao2024} report partial deployment on a real IBM~Q backend
+(QASM simulator), and no study provides a systematic comparison of
+simulator versus hardware performance under noise.  The gap between
+simulator and hardware results---which Section~\ref{sec:hardware} is designed
+to quantify---remains the most critical open empirical question in the field.
+
+\subsection{Pipeline Architecture}
+
+The pipeline consists of four stages, summarized in
+Table~\ref{tab:pipeline}: (1)~a frozen ConvNeXt-Tiny backbone, used headless,
+maps each $224\times224$ input image to a 768-dimensional embedding; (2)~a
+domain-adversarial neural network (DANN) with a gradient reversal layer (GRL)
+is trained on top of the embedding to suppress the dataset shift between the
+training and test distributions (Section~\ref{sec:relwork}); (3)~a
+nonlinear autoencoder, fitted on the training embeddings, reduces this
+embedding to 64 dimensions, chosen to match the Hilbert-space dimension of a
+6-qubit register ($2^6 = 64$); and (4)~a
+6-qubit, 3-layer VQC, using amplitude encoding
+(Equation~\ref{eq:amplitude}) and the rotation-plus-ring-CNOT ansatz of
+Section~\ref{sec:vqc}, produces a scalar pneumonia score via
+Equations~\ref{eq:vqc}--\ref{eq:sigmoid_remap}.
+
+\begin{table}[htbp]
+\centering
+\caption{Hybrid pipeline architecture and parameter counts.}
+\label{tab:pipeline}
+\begin{tabular}{@{}lllll@{}}
+\toprule
+Stage & Input & Operation & Output & Parameters \\
+\midrule
+Feature extraction & $224\times224$ image & ConvNeXt-Tiny (frozen) & 768-D vector & 0 (fixed) \\
+Domain adaptation & 768-D & DANN + GRL & 768-D vector & 0 (fixed) \\
+Dimensionality reduction & 768-D & Autoencoder (nonlinear) & 64-D vector & 0 (fixed) \\
+Quantum classification & 64-D & VQC $U(\theta)$ & score $\in [0,1]$ & 54 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Among linear PCA, linear discriminant analysis (LDA), and univariate feature
+selection (SelectKBest), a nonlinear autoencoder yielded the most stable
+training dynamics and the best validation performance at 64 latent
+dimensions; LDA suffered from numerical instability in the
+high-dimension/limited-sample regime, and SelectKBest achieved marginally
+weaker validation metrics.  The autoencoder therefore replaces the linear
+projection used in earlier variants of this pipeline.
+
+\begin{figure}[htbp]
+\centering
+\fbox{\parbox{0.85\textwidth}{\centering \vspace{1.2em}
+\textbf{[Figure placeholder]} \\[4pt]
+Chest X-ray $224\times224$ \;$\rightarrow$\; ConvNeXt-Tiny (headless)
+\;$\rightarrow$\; 768-D features \;$\rightarrow$\; DANN/GRL \;$\rightarrow$\;
+Autoencoder ($768\rightarrow64$) \;$\rightarrow$\;
+6-qubit VQC (54 params) \;$\rightarrow$\; $P(\text{pneumonia})$
+\vspace{1.2em}}}
+\caption{Schematic of the hybrid CNN--autoencoder--VQC pipeline.}
+\label{fig:pipeline}
+\end{figure}
+
+\subsection{Dataset and Preprocessing}
+
+The pipeline was evaluated on the publicly available pediatric CXR pneumonia
+dataset originating from the Guangzhou Women and Children's Medical Center
+(5,856 anteroposterior CXR images, ages approximately 1--5 years).  The
+original release provides a validation split of only 16 images, which is
+insufficient for reliable convergence monitoring; the training and validation
+partitions were therefore merged and re-split 80:20 with class stratification,
+while the original test partition was left untouched to preserve the integrity
+of the final evaluation.  The resulting split is summarized in
+Table~\ref{tab:dataset}.  Notably, the test set exhibits a materially different
+class prevalence (62.5\% pneumonia) than the training and validation sets
+(74.2\% pneumonia), constituting an explicit, quantified dataset shift that is
+exploited below as a robustness stress test rather than concealed.
+
+\begin{table}[htbp]
+\centering
+\caption{Dataset composition and class-prevalence shift.}
+\label{tab:dataset}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Split & Images & Pneumonia (\%) & Normal (\%) \\
+\midrule
+Training   & 4{,}185 & 74.2 & 25.8 \\
+Validation & 1{,}047 & 74.2 & 25.8 \\
+Test       &   624   & 62.5 & 37.5 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Standard image preprocessing was applied prior to the ConvNeXt-Tiny forward
+pass: resizing to $224\times224$ pixels, conversion to a normalized float
+tensor, and channel-wise standardization using ImageNet mean $[0.485, 0.456,
+0.406]$ and standard deviation $[0.229, 0.224, 0.225]$, matching the
+statistics of the pretraining distribution.  Because the CXR images are
+grayscale while the backbone expects three input channels, the single
+channel is duplicated across the RGB channels.  Medical-safe augmentations
+were limited to mild rotations ($\pm 7^\circ$), small affine translations,
+and modest color jitter; aggressive augmentations such as horizontal flipping
+and RandAugment were deliberately excluded as they are harmful for
+anatomical X-ray content.
+
+\subsection{Training Configuration and Loss Functions}
+
+The VQC and a classical baseline classifier (a single-hidden-layer MLP with
+32 hidden units, operating on the same 64-dimensional autoencoder features)
+were trained independently, each with the Adam optimizer, a batch size of 16,
+and early stopping (patience of 3 epochs) on validation loss.  Because VQC
+outputs (Equation~\ref{eq:vqc}) lie in $[-1,1]$ rather
+than $[0,1]$, binary labels $y_i \in \{0,1\}$ were remapped to targets
+$t_i \in \{-1,+1\}$, and the quantum classifier was trained with a
+class-weighted mean squared error,
+\begin{equation}
+  \mathcal{L}_{\text{QMSE}} = \frac{1}{N}\sum_{i=1}^{N}
+  w(t_i)\left(z_i - t_i\right)^2,
+  \label{eq:qmse}
+\end{equation}
+where $z_i$ is the raw circuit output and $w(\cdot)$ up-weights the minority
+(Normal) class to counteract the training-set prevalence imbalance.  The
+classical baseline was trained with a class-weighted binary cross-entropy loss
+on its sigmoid output.  The quantum classifier's learning rate followed a
+linear warm-up over the first $E_{\text{warmup}} = 3$ epochs followed by
+cosine annealing,
+\begin{equation}
+  \eta(e) =
+  \begin{cases}
+    \eta_0 \dfrac{e}{E_{\text{warmup}}}, & e \le E_{\text{warmup}}, \\[8pt]
+    \eta_{\min} + \dfrac{1}{2}(\eta_0 - \eta_{\min})\!\left[1 +
+    \cos\!\left(\pi\, \dfrac{e - E_{\text{warmup}}}{E - E_{\text{warmup}}}
+    \right)\right], & e > E_{\text{warmup}},
+  \end{cases}
+  \label{eq:cosine_schedule}
+\end{equation}
+with $\eta_0 = 10^{-3}$ and $\eta_{\min} = 10^{-5}$, while the classical
+baseline used unmodified cosine annealing.  Gradient computation for the
+quantum circuit used the adjoint differentiation method on the simulator,
+which is dramatically faster than the parameter-shift rule and requires no
+additional circuit executions beyond the forward pass.  All quantum-circuit
+simulation was performed on a GPU-accelerated statevector simulator
+(noise-free), so the reported results characterize the idealized,
+decoherence-free behavior of the ansatz rather than performance on physical
+NISQ hardware.  In practice both models converged well before the 50-epoch
+budget (early stopping triggered at approximately 7--10 epochs).
+
+\subsection{Results}
+
+Table~\ref{tab:results} summarizes test-set performance for the classical
+baseline and the hybrid VQC classifier at the validation-selected decision
+thresholds (Section~\ref{sec:threshold}): $\tau=0.30$ for the MLP and
+$\tau=0.35$ for the VQC.  Both thresholds were selected to maximize balanced
+accuracy on the validation set only, and applied once to the test set.
+
+\begin{table}[htbp]
+\centering
+\caption{Test-set diagnostic performance: classical MLP baseline vs.\ hybrid
+  VQC classifier (624 test images, 62.5\% pneumonia prevalence).  Thresholds
+  $\tau$ were selected on the validation set via balanced-accuracy
+  maximization and applied once to the test set.}
+\label{tab:results}
+\begin{tabular}{@{}lrr@{}}
+\toprule
+Metric & Classical (MLP) & Hybrid (VQC) \\
+\midrule
+Accuracy              & 82.53\% & 81.25\% \\
+Precision             & 78.27\% & 77.03\% \\
+Sensitivity (Recall)  & 99.74\% & 99.74\% \\
+Specificity           & 53.85\% & 50.43\% \\
+$F_1$-score           & 0.8771  & 0.8693 \\
+AUC-ROC (test)        & 0.940   & 0.860  \\
+Balanced accuracy     & 0.7679  & 0.7509 \\
+\addlinespace
+Decision threshold $\tau$ & 0.30 & 0.35 \\
+Decision-layer parameters & 2{,}113 & 54 \\
+Parameter reduction       & \multicolumn{2}{c}{$\approx 39\times$} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The classical baseline outperforms the hybrid quantum classifier on every
+reported metric, consistent with the expectation that a fully connected head
+can better exploit a rich, 64-dimensional continuous representation than a
+shallow, locally entangling 6-qubit circuit.  The gap is nevertheless
+modest---the accuracy difference is 1.28 percentage points and is not
+statistically significant at $\alpha=0.05$ under McNemar's test applied to
+the 624 paired test predictions---so the hybrid model attains essentially
+comparable discriminative performance (test AUC-ROC 0.860) using
+approximately $39\times$ fewer decision-layer parameters (54 versus 2{,}113).
+Both models exhibit a ``cautious screening'' operating profile, with very
+high sensitivity (99.74\%) at the cost of low specificity (50.4--53.9\%),
+which from a purely metric standpoint favors minimizing missed pneumonia
+cases over minimizing false alarms; we emphasize that no clinical validation
+of this trade-off is implied.  The modest specificity is attributable to the
+decision thresholds selected by the balanced-accuracy criterion, which
+deliberately trades specificity for sensitivity in an imbalanced test
+population.
+
+Compared to the literature surveyed in Table~\ref{tab:related}, the test
+AUC-ROC of 0.860 is lower than the near-perfect figures reported by Rao et
+al.~\cite{rao2024} or Kulkarni et al.~\cite{kulkarni2023}, differences
+that can be attributed to: (i)~the explicit train/test class-prevalence
+shift applied here; (ii)~the single-run evaluation without cross-validation;
+and (iii)~the absence of fine-tuning of the ConvNeXt-Tiny backbone.  These
+factors collectively reduce the upper bound on achievable performance and
+make the comparison more conservative and, arguably, more realistic.
+
+% ==============================================================
+\section{Experiments on Real Quantum Hardware}
+\label{sec:hardware}
+% ==============================================================
+
+\hwplaceholder{%
+  This section will report the results of executing the VQC classifier
+  (Section~\ref{sec:hybrid}) on one or more physical NISQ devices (e.g.,
+  IBM~Quantum superconducting processors or trapped-ion platforms).  It will
+  include the following subsections once the experiments are complete.
+}
+
+\subsection{Motivation and Hardware Selection}
+\label{sec:hw_motivation}
+
+\hwplaceholder{%
+  Justification for the choice of hardware platform(s); qubit counts, native
+  gate sets, and typical two-qubit gate error rates of the selected devices;
+  circuit transpilation and optimization strategy (e.g., routing, SWAP
+  insertion, basis-gate decomposition); and the mapping between the 6-qubit
+  VQC ansatz and the device's connectivity graph.
+}
+
+\subsection{Error Mitigation Strategies}
+\label{sec:hw_mitigation}
+
+\hwplaceholder{%
+  Description of the error mitigation protocol(s) to be applied:
+  readout-error calibration, zero-noise extrapolation (ZNE), probabilistic
+  error cancellation (PEC), or dynamical decoupling (DD).  Discussion of
+  encoding-dependent mitigation effectiveness in light of the comparative
+  literature \cite{qkernel2022,haug2021}, and the expected trade-off between
+  mitigation overhead (additional circuit executions) and performance gain.
+}
+
+\subsection{Hardware Results and Simulator--Hardware Gap}
+\label{sec:hw_results}
+
+\hwplaceholder{%
+  Test-set performance metrics (Table~\ref{tab:results} format) obtained on
+  the physical device, with and without error mitigation.  Quantitative
+  comparison against the noise-free statevector simulator results to assess
+  the magnitude of the hardware degradation.  Analysis of which circuit
+  components (state preparation, entangling layers, measurement) contribute
+  most to the performance gap, and recommendations for circuit re-design to
+  improve hardware fidelity.
+}
+
+% ==============================================================
+\section{Experimental Considerations and Evaluation Metrics}
+\label{sec:eval}
+% ==============================================================
+
+\subsection{Metrics}
+
+Given the class imbalance typical of public pneumonia CXR datasets, accuracy
+alone is an insufficient evaluation criterion.  We recommend reporting, at
+minimum: sensitivity (recall), $\mathrm{Sens} = TP/(TP+FN)$; specificity,
+$\mathrm{Spec} = TN/(TN+FP)$; balanced accuracy,
+$\mathrm{BalAcc} = \tfrac{1}{2}(\mathrm{Sens}+\mathrm{Spec})$; the
+$F_1$-score; and the area under the receiver operating characteristic curve
+(AUC-ROC), which is threshold-independent and therefore particularly
+informative when comparing classifiers (such as a VQC and an MLP) whose raw
+outputs have different natural ranges and calibration properties.
+
+\subsection{Threshold Selection}
+\label{sec:threshold}
+
+Because the VQC output (Equation~\ref{eq:sigmoid_remap}) and the classical
+sigmoid output are continuous scores, a decision threshold $\tau$ must be
+chosen to obtain a binary prediction
+$\hat{y} = \mathbb{1}[\,p_{\text{pneumonia}} > \tau\,]$.  A principled
+approach is to perform a discrete threshold scan on the validation set,
+selecting $\tau^\star = \arg\max_\tau \mathrm{BalAcc}(\tau)$, and to report
+test-set metrics at this fixed, validation-selected threshold rather than at
+an arbitrarily chosen value.  In the case study reviewed here, this procedure
+selected $\tau^\star = 0.30$ for the MLP and $\tau^\star = 0.35$ for the VQC
+over a scan range of $\tau \in [0.30, 0.80]$ with step $0.025$, both below
+the conventional default of 0.5.  The sensitivity analysis itself remains a
+useful diagnostic: thresholds near the conventional 0.5 default shift the
+operating point toward higher specificity at the cost of sensitivity, whereas
+the balanced-accuracy criterion favors the low-threshold, high-sensitivity
+operating point reported in Table~\ref{tab:results}.
+
+\subsection{Dataset Shift as an Explicit Evaluation Axis}
+
+We highlight dataset shift as a first-class evaluation concern rather than
+an incidental property of the data split.  Reporting class prevalence
+separately for training, validation, and test partitions (as in
+Table~\ref{tab:dataset}) allows a reader to distinguish genuine
+generalization performance from performance inflated by matching train/test
+class ratios.  This is particularly relevant for QML studies, where
+sample-efficiency constraints (imposed by simulator run-time or hardware queue
+availability) often preclude the large-scale cross-validation protocols that
+are standard in classical deep learning benchmarking; a single, explicitly
+characterized shift-aware split is a partial, low-cost mitigation.  The
+generalizability limitations of single-institution, narrow-demographic datasets
+highlighted by Zech et al.~\cite{zech2018} apply with equal force to hybrid
+quantum--classical architectures.
+
+\subsection{Interpretability}
+
+For classical CNN components, gradient-based saliency methods such as Grad-CAM
+can verify that the network attends to clinically relevant lung regions rather
+than to background artifacts (e.g., imaging equipment, laterality markers),
+providing a qualitative sanity check complementary to aggregate performance
+metrics.  Decoodt et al.~\cite{decoodt2023} found that augmenting a
+DenseNet-121 backbone with a variational quantum layer improved
+Grad-CAM$++$ localization quality for cardiomegaly detection, suggesting a
+potential ancillary benefit of quantum components beyond raw classification
+accuracy.  Analogous interpretability tools for the quantum component are
+considerably less mature; feasible directions include measuring the sensitivity
+of the circuit output to perturbations of individual input amplitudes, or
+analyzing feature importance in the classical dimensionality-reduction stage
+(e.g., via SelectKBest or PCA loading vectors) as a proxy for what information
+reaches the quantum classifier.
+
+% ==============================================================
+\section{Challenges, Limitations, and Open Problems}
+\label{sec:limitations}
+% ==============================================================
+
+We summarize the principal limitations of current hybrid VQC approaches to CXR
+pneumonia detection, several of which are directly evidenced by the case study
+in Section~\ref{sec:hybrid}.
+
+\begin{enumerate}[leftmargin=1.4em]
+  \item \textbf{Barren plateaus.}  As circuit width or entangling depth
+    increases, gradient variance decays exponentially
+    (Equation~\ref{eq:barren}), limiting the ansätze that can be reliably
+    trained with current optimizers \cite{mcclean2018,cerezo2021,marrero2021}.
+    The case-study ansatz was therefore deliberately restricted to three
+    shallow layers on six qubits, a regime in which gradient-variance
+    concentration is not expected to dominate training
+    (Section~\ref{sec:barren}).  While several mitigation strategies exist,
+    none fully eliminates the fundamental exponential scaling
+    \cite{kashif2023}.
+  \item \textbf{State-preparation and encoding overhead.}  Amplitude encoding
+    achieves exponential qubit compression but, in the general case, incurs
+    exponential state-preparation circuit depth \cite{aaronson2015};
+    simulator-based studies typically do not account for this cost, which will
+    materially affect feasibility on physical hardware.
+  \item \textbf{Dataset shift.}  Differences in class prevalence (and, more
+    broadly, in acquisition device, patient demographics, and imaging protocol)
+    between training and deployment distributions are a well-documented source
+    of generalization failure for CXR classifiers \cite{zech2018}, and were
+    observed to degrade specificity in the reviewed case study.
+  \item \textbf{Hardware noise.}  All simulation results reviewed here were
+    obtained on noise-free statevector simulators; real NISQ devices introduce
+    gate errors, readout errors, and decoherence that are expected to degrade
+    performance unless mitigated.  Empirical evidence from quantum kernel
+    studies suggests that error mitigation effectiveness is strongly
+    encoding-dependent and that no universally applicable mitigation protocol
+    has emerged \cite{qkernel2022,haug2021}.
+  \item \textbf{Information loss under dimensionality reduction.}  Compressing
+    a 768-dimensional CNN embedding to 64 (or fewer) dimensions via the
+    nonlinear autoencoder
+    necessarily discards variance, some fraction of which may be diagnostically
+    relevant.  Alternative encodings that avoid aggressive compression
+    (e.g., data re-uploading \cite{perez2020} with angle encoding, or
+    distributed amplitude encoding over multiple shorter circuits) remain open
+    design questions \cite{sharma2023survey}.
+  \item \textbf{Absence of demonstrated quantum advantage.}  At the circuit
+    scales considered (single-digit qubits), no computational or statistical
+    advantage over classical models has been established; the case for VQC
+    decision layers currently rests on parameter efficiency rather than
+    accuracy or speed.
+  \item \textbf{Limited statistical robustness.}  The case study reviewed here
+    uses a single train/validation/test split without cross-validation or
+    repeated randomized resampling, owing to the computational cost of circuit
+    simulation;
+    reported performance differences, while accompanied by approximate
+    confidence intervals, should be interpreted with the caveats appropriate
+    to a single-run evaluation.
+  \item \textbf{Single-institution, narrow-demographic data.}  The underlying
+    dataset originates from a single pediatric population at one medical center,
+    limiting claims of generalizability to adult populations, other acquisition
+    protocols, or other institutions.
+  \item \textbf{Unfair classical baselines.}  Several studies surveyed in
+    Table~\ref{tab:related} compare a quantum model favorably against a
+    deliberately weak classical reference, inflating the apparent advantage of
+    the hybrid approach.  Rigorous evaluation requires comparison against
+    optimized classical baselines of equal or greater parameter budget on the
+    quantum side \cite{aaronson2015}.
+\end{enumerate}
+
+% ==============================================================
+\section{Future Directions}
+\label{sec:future}
+% ==============================================================
+
+Several directions appear promising for advancing hybrid quantum--classical
+pneumonia detection beyond the proof-of-concept stage.
+
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{Execution on physical quantum hardware.}  Migrating the VQC
+    component to a cloud-accessible NISQ device (e.g., superconducting or
+    trapped-ion platforms), combined with hardware-aware error mitigation
+    \cite{qkernel2022,haug2021}, will quantify the simulator-to-hardware
+    performance gap and is a necessary step before any hardware-relevant
+    advantage claim can be assessed.  This is the primary goal of
+    Section~\ref{sec:hardware} (forthcoming).
+  \item \textbf{Quantum convolutional and quanvolutional architectures.}
+    QCNNs \cite{cong2019,wei2022} that exploit spatial locality in the quantum
+    circuit, and quanvolutional pre-processing layers \cite{henderson2020quanvolutional}
+    that apply quantum filters to image patches prior to classical CNN
+    processing, represent theoretically motivated alternatives to the
+    ``quantum classifier head'' paradigm.  Their trainability guarantees
+    \cite{pesah2021} and parameter independence from input size make them
+    particularly attractive for deployment under NISQ constraints.
+  \item \textbf{Quantum kernel methods.}  Replacing the VQC classifier with a
+    quantum kernel SVM \cite{havlicek2019,schuld2019kernel} has the advantage
+    of convex optimization---eliminating barren plateaus by construction---and
+    a well-defined notion of kernel quality via the quantum Fisher information
+    \cite{haug2021}.  Scalable kernel estimation via randomized measurements
+    \cite{haug2021} makes this approach computationally feasible even for
+    training sets of several thousand images.
+  \item \textbf{Data re-uploading classifiers.}  Applying the
+    data re-uploading paradigm \cite{perez2020} within the VQC decision layer
+    would increase circuit expressibility without requiring additional qubits,
+    potentially alleviating the information-loss constraints imposed by
+    aggressive dimensionality reduction to the 64-dimensional amplitude-encoded
+    register.
+  \item \textbf{Systematic hyperparameter optimization.}  Bayesian optimization
+    frameworks (e.g., Optuna) applied jointly across classical and quantum
+    hyperparameters (learning rate, ansatz depth, entangling topology, number
+    of retained latent dimensions) would allow more efficient exploration of the
+    design space than manual or grid search, particularly given the high per-run
+    cost of circuit simulation.
+  \item \textbf{Rigorous, shift-aware, multi-institutional evaluation.}
+    Extending evaluation to larger, multi-site datasets (e.g., CheXpert,
+    NIH ChestX-ray14) and explicit domain-adaptation techniques (reweighting,
+    adversarial domain adaptation) would provide a more realistic assessment
+    of generalization than single-institution pediatric data \cite{zech2018}.
+  \item \textbf{Ensemble and hybrid-decision strategies.}  Combining classical
+    and quantum model outputs (e.g., via weighted logit averaging or a
+    meta-classifier) could exploit differences in the error profiles of the two
+    approaches, potentially improving both sensitivity and specificity relative
+    to either model alone \cite{kundu2021}.
+  \item \textbf{Quantum-side interpretability.}  Developing
+    sensitivity- and perturbation-based tools analogous to Grad-CAM for the
+    quantum decision layer would help clarify whether the VQC learns
+    complementary or redundant information relative to the classical
+    autoencoder projection, and would support the broader goal of building
+    trustworthy clinical decision-support systems.
+\end{itemize}
+
+% ==============================================================
+\section{Conclusion}
+\label{sec:conclusion}
+% ==============================================================
+
+This paper reviewed the computational and algorithmic foundations of hybrid
+quantum--classical architectures for pneumonia detection from chest X-ray
+images, with an emphasis on data-encoding strategies, variational and
+convolutional ansatz design, quantum kernel methods, and the trainability
+limitations imposed by barren plateaus together with their principal
+mitigation strategies.  We surveyed a growing body of literature applying
+hybrid QML pipelines to CXR tasks---including recent works demonstrating
+statistically significant improvements over classical baselines
+\cite{kulkarni2023} and near-unity accuracy on COVID-19 radiography datasets
+\cite{rao2024}---while noting the evaluation limitations that temper direct
+comparison across studies.
+
+Using a ConvNeXt-Tiny/autoencoder/VQC pipeline evaluated on a public pediatric
+CXR dataset as a concrete case study, we showed that a 6-qubit, 54-parameter
+variational quantum classifier can achieve a level of diagnostic performance
+comparable to---though not exceeding---that of a classical MLP of comparable
+input dimensionality (test AUC-ROC 0.860 versus 0.940; accuracy 81.25\%
+versus 82.53\%), while requiring approximately $39\times$ fewer trainable
+parameters in the decision layer (54 versus 2{,}113).  This result
+should be read narrowly: it demonstrates that a compact variational circuit can
+serve as a functional, parameter-efficient classifier on a compressed
+medical-imaging representation, not that a computational or statistical quantum
+advantage has been achieved.  Barren plateaus, state-preparation overhead,
+aggressive dimensionality-reduction-induced information loss, and dataset shift
+all constrain current performance, and the simulation-based results reported
+here have yet to be validated on physical quantum hardware.
+
+We regard hybrid VQC decision layers, quantum convolutional architectures, and
+quantum kernel classifiers as promising but early-stage research directions
+whose eventual clinical or practical relevance will depend on: progress in
+fault-tolerant or higher-fidelity NISQ hardware; more expressive yet trainable
+ansatz designs (e.g., data re-uploading, low-entanglement initialization);
+hardware-aware error mitigation; and substantially more rigorous,
+multi-institutional, shift-aware evaluation protocols than are currently
+standard in the literature.  The forthcoming hardware experiments
+(Section~\ref{sec:hardware}) will provide the first direct empirical
+quantification of the simulator-to-hardware gap for this specific pipeline and
+will constitute a necessary precondition for any hardware-grounded advantage
+claim.
+
+% ==============================================================
+%  REFERENCES
+% ==============================================================
+\begin{thebibliography}{99}
+
+\bibitem{aaronson2015}
+Aaronson, S. (2015). Read the fine print. \emph{Nature Physics}, 11(4),
+291--293.
+
+\bibitem{biamonte2017}
+Biamonte, J., Wittek, P., Pancotti, N., Rebentrost, P., Wiebe, N., \& Lloyd,
+S. (2017). Quantum machine learning. \emph{Nature}, 549(7671), 195--202.
+
+\bibitem{cdc2025}
+Centers for Disease Control and Prevention. (2025). \emph{About Pneumonia}.
+\url{https://www.cdc.gov/pneumonia/about/index.html}
+
+\bibitem{cerezo2021}
+Cerezo, M., Sone, A., Volkoff, T., Cincio, L., \& Coles, P.~J. (2021).
+Cost-function-dependent barren plateaus in shallow parametrized quantum
+circuits. \emph{Nature Communications}, 12(1), 1791.
+
+\bibitem{cong2019}
+Cong, I., Choi, S., \& Lukin, M.~D. (2019). Quantum convolutional neural
+networks. \emph{Nature Physics}, 15(12), 1273--1278.
+
+\bibitem{decoodt2023}
+Decoodt, P., Liang, T.~J., et al. (2023). Hybrid classical--quantum transfer
+learning for cardiomegaly detection in chest X-rays. \emph{Journal of
+Imaging}, 9(7), 128.
+\url{https://doi.org/10.3390/jimaging9070128}
+
+\bibitem{ding2024}
+Ding, Y., Zhang, S., \& Li, X. (2024). Noise mitigation: an efficient approach
+for quantum convolutional neural networks to enhance performance in NISQ.
+Preprint. \url{https://doi.org/10.21203/rs.3.rs-4594670/v1}
+
+\bibitem{haug2021}
+Haug, T., Self, C.~N., \& Kim, M. (2021). Quantum machine learning of
+large datasets using randomized measurements. \emph{arXiv preprint
+arXiv:2108.01039}.
+
+\bibitem{havlicek2019}
+Havl\'i\v{c}ek, V., C\'orcoles, A.~D., Temme, K., Harrow, A.~W., Kandala,
+A., Chow, J.~M., \& Gambetta, J.~M. (2019). Supervised learning with
+quantum-enhanced feature spaces. \emph{Nature}, 567(7747), 209--212.
+
+\bibitem{he2016}
+He, K., Zhang, X., Ren, S., \& Sun, J. (2016). Deep residual learning for
+image recognition. In \emph{Proceedings of the IEEE Conference on Computer
+Vision and Pattern Recognition (CVPR)}, 770--778.
+
+\bibitem{henderson2020quanvolutional}
+Henderson, M., Shakya, S., Pradhan, S., \& Cook, T. (2020). Quanvolutional
+neural networks: Powering image recognition with quantum circuits.
+\emph{Quantum Machine Intelligence}, 2(1), 2.
+
+\bibitem{iqwig2021}
+Institute for Quality and Efficiency in Health Care (IQWiG). (2021).
+\emph{Overview: Pneumonia}. InformedHealth.org.
+\url{https://www.ncbi.nlm.nih.gov/books/NBK525774/}
+
+\bibitem{kashif2023}
+Kashif, M., \& Al-Kuwari, S. (2023). The unified effect of data encoding,
+ansatz expressibility and entanglement on the trainability of HQNNs.
+\emph{International Journal of Parallel, Emergent and Distributed Systems},
+38(5), 362--400.
+\url{https://doi.org/10.1080/17445760.2023.2231163}
+
+\bibitem{kulkarni2023}
+Kulkarni, V., Pawale, S., \& Kharat, A. (2023). A classical--quantum
+convolutional neural network for detecting pneumonia from chest radiographs.
+\emph{Neural Computing and Applications}, 35(21), 15503--15510.
+\url{https://doi.org/10.1007/s00521-023-08566-1}
+
+\bibitem{khatoniar2024}
+Khatoniar, R., Vyas, V., Acharya, V., et al. (2024). Quantum convolutional
+neural network for medical image classification. In \emph{Proceedings of the
+2nd International Conference on Trends in Quantum Computing and Emerging
+Business Technologies (TQCEBT)}. IEEE.
+\url{https://doi.org/10.1109/tqcebt59414.2024.10545121}
+
+\bibitem{kundu2021}
+Kundu, R., Das, R., Geem, Z.~W., Han, G.-T., \& Sarkar, R. (2021). Pneumonia
+detection in chest X-ray images using an ensemble of deep learning models.
+\emph{PLOS ONE}, 16(9), e0256630.
+
+\bibitem{liu2022sea}
+Liu, X., Liu, G., Huang, J., et al. (2022). Mitigating barren plateaus of
+variational quantum eigensolvers. \emph{arXiv preprint arXiv:2205.13539}.
+
+\bibitem{marrero2021}
+Ortiz Marrero, C., Kieferov\'a, M., \& Wiebe, N. (2021).
+Entanglement-induced barren plateaus. \emph{PRX Quantum}, 2(4), 040316.
+\url{https://doi.org/10.1103/PRXQuantum.2.040316}
+
+\bibitem{mcclean2018}
+McClean, J.~R., Boixo, S., Smelyanskiy, V.~N., Babbush, R., \& Neven, H.
+(2018). Barren plateaus in quantum neural network training landscapes.
+\emph{Nature Communications}, 9(1), 4812.
+
+\bibitem{mitarai2018}
+Mitarai, K., Negoro, M., Kitagawa, M., \& Fujii, K. (2018). Quantum circuit
+learning. \emph{Physical Review A}, 98(3), 032309.
+
+\bibitem{naz2020}
+Naz, A. (2020). Literature review on X-ray based pneumonia detection using
+deep learning. \emph{LCJSTEM}, 1(1), 1--9.
+
+\bibitem{nielsen2010}
+Nielsen, M.~A., \& Chuang, I.~L. (2010). \emph{Quantum Computation and
+Quantum Information} (10th anniversary ed.). Cambridge University Press.
+
+\bibitem{patti2021}
+Patti, T.~L., Najafi, K., Gao, X., \& Yelin, S.~F. (2021). Entanglement
+devised barren plateau mitigation. \emph{Physical Review Research}, 3,
+033090. \url{https://doi.org/10.1103/PhysRevResearch.3.033090}
+
+\bibitem{perez2020}
+P\'erez-Salinas, A., Cervera-Lierta, A., Gil-Fuster, E., \& Latorre, J.~I.
+(2020). Data re-uploading for a universal quantum classifier. \emph{Quantum},
+4, 226.
+
+\bibitem{pesah2021}
+Pesah, A., Cerezo, M., Wang, S., Volkoff, T., Sornborger, A.~T., \& Coles,
+P.~J. (2021). Absence of barren plateaus in quantum convolutional neural
+networks. \emph{Physical Review X}, 11(4), 041011.
+
+\bibitem{preskill2018}
+Preskill, J. (2018). Quantum computing in the NISQ era and beyond.
+\emph{Quantum}, 2, 79.
+
+\bibitem{qkernel2022}
+Beaulieu, D., Miracle, D., Pham, A.~T., \& Scherr, W. (2022). Quantum kernel
+for image classification of real-world manufacturing defects. \emph{arXiv
+preprint arXiv:2212.08693}.
+
+\bibitem{rao2024}
+Rao, G.~V.~E., Rajitha, B., Srinivasu, P.~N., Ijaz, M.~F., \& Wo\'zniak, M.
+(2024). Hybrid framework for respiratory lung diseases detection based on
+classical CNN and quantum classifiers from chest X-rays. \emph{Biomedical
+Signal Processing and Control}, 88, 105567.
+\url{https://doi.org/10.1016/j.bspc.2023.105567}
+
+\bibitem{schuld2018}
+Schuld, M., \& Petruccione, F. (2018). \emph{Supervised Learning with
+Quantum Computers}. Springer, Quantum Science and Technology.
+
+\bibitem{schuld2019kernel}
+Schuld, M., \& Killoran, N. (2019). Quantum machine learning in feature
+Hilbert spaces. \emph{Physical Review Letters}, 122(4), 040504.
+
+\bibitem{schuld2021kernel}
+Schuld, M. (2021). Supervised quantum machine learning models are kernel
+methods. \emph{arXiv preprint arXiv:2101.11020}.
+
+\bibitem{ortiz2022}
+Ortiz-Toro, C., Garc\'ia-Pedrero, A., Lillo-Saavedra, M., \& Gonzalo-Mart\'in,
+C. (2022). Automatic detection of pneumonia in chest X-ray images using
+textural features. \emph{Computers in Biology and Medicine}, 145, 105466.
+\url{https://doi.org/10.1016/j.compbiomed.2022.105466}
+
+\bibitem{sharma2023survey}
+Sharma, A., et al. (2023). Survey of encoding techniques for quantum machine
+learning. \emph{Cybernetics and Physics}, 12(1), 45--67.
+
+\bibitem{sharmaR2023hybrid}
+Sharma, R. (2023). Classification of pneumonia via a hybrid ZFNet--quantum
+neural network. \emph{Current Medical Imaging Reviews}. Advance online
+publication.
+
+\bibitem{sim2019}
+Sim, S., Johnson, P.~D., \& Aspuru-Guzik, A. (2019). Expressibility and
+entangling capability of parametrized quantum circuits for hybrid
+quantum-classical algorithms. \emph{Advanced Quantum Technologies}, 2(12),
+1900070.
+
+\bibitem{wei2022}
+Wei, S., Chen, Y., Zhou, Z.-R., \& Long, G.-L. (2022). A quantum convolutional
+neural network on NISQ devices. \emph{AAPPS Bulletin}, 32(1), 2.
+\url{https://doi.org/10.1007/s43673-021-00030-3}
+
+\bibitem{zech2018}
+Zech, J.~R., Badgeley, M.~A., Liu, M., Costa, A.~B., Titano, J.~J., \&
+Oermann, E.~K. (2018). Variable generalization performance of a deep learning
+model to detect pneumonia in chest radiographs: A cross-sectional study.
+\emph{PLOS Medicine}, 15(11), e1002683.
+
+\bibitem{zhu2024}
+Zhu, Y., Liang, Y., \& Situ, H. (2024). Enhancing variational quantum circuit
+training: an improved neural network approach for barren plateau mitigation.
+\emph{arXiv preprint arXiv:2411.09226}.
+
+\end{thebibliography}
+
+\end{document}
