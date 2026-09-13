@@ -4,6 +4,7 @@ chest_xray
 .vscode
 features
 .opencode
+.omo
 
 # LaTeX build artifacts
 *.log
@@ -33,3 +34,10 @@ features
 !docs/literatura.bib
 # IBM Quantum token (one per developer, never committed)
 ibm_token.txt
+
+# Pipeline artifacts
+results/*.npy
+artifacts/features/*.npy
+.pytest_cache/
+*.egg-info/
+.venv/
