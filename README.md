@@ -1,6 +1,6 @@
 # Hybrid Model for Pneumonia Detection
 
-[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/mforgo/Hybrid-model-for-pneumonia-detection/blob/main/pneumonia_hybrid_qml.ipynb)
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/mforgo/Hybrid-model-for-pneumonia-detection/blob/main/notebooks_archive/pneumonia_hybrid_qml.ipynb)
 [![GitHub stars](https://img.shields.io/github/stars/mforgo/Hybrid-model-for-pneumonia-detection)](https://github.com/mforgo/Hybrid-model-for-pneumonia-detection/stargazers)
 [![License](https://img.shields.io/github/license/mforgo/Hybrid-model-for-pneumonia-detection)](https://github.com/mforgo/Hybrid-model-for-pneumonia-detection/blob/main/LICENSE)
 
@@ -136,7 +136,7 @@ The notebook uses PennyLane's `lightning.qubit` backend (falls back from `lightn
 
 1. **Open the notebook**
 
-   - Upload `pneumonia_hybrid_qml.ipynb` to Google Colab or open it directly from your GitHub repo.
+   - Upload `notebooks_archive/pneumonia_hybrid_qml.ipynb` to Google Colab or open it directly from your GitHub repo.
    - Enable a **GPU runtime** in Colab (e.g. T4 or A100).
 
 2. **Install dependencies**

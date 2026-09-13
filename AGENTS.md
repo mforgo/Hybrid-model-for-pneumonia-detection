@@ -87,7 +87,7 @@ This document defines the specialized AI agent personas contributing to the rese
 
 **Type:** Pre-trained ConvNeXt-Tiny (classical)  
 **Framework:** PyTorch / torchvision  
-**Location:** `02_preprocessing.ipynb`
+**Location:** `notebooks_archive/02_preprocessing.ipynb`
 
 **Role:**
 Acts as a frozen visual encoder. Transforms raw chest X-ray images into compact, high-level feature vectors. The classification head is removed; the network outputs the 768-dimensional pooled feature vector.
@@ -119,7 +119,7 @@ Run once; outputs are cached to `artifacts/features/`. All subsequent experiment
 
 **Type:** Variational Autoencoder (classical)  
 **Framework:** PyTorch  
-**Location:** `pneumonia_hybrid_qml.ipynb`
+**Location:** `notebooks_archive/pneumonia_hybrid_qml.ipynb`
 
 **Role:**
 Compresses the 768-dimensional ConvNeXt-Tiny feature vector to 64 dimensions using a VAE with KL regularization — matching the Hilbert space of a 6-qubit register (2^6 = 64). The probabilistic latent space provides smoother representations for the quantum classifier.
@@ -154,7 +154,7 @@ loss = recon_loss + beta * kl_loss
 **Framework:** PennyLane 0.43+  
 **Backend (training):** `lightning.gpu` (CUDA) on Colab A100  
 **Backend (hardware eval):** `qiskit.ibm` via pennylane-qiskit  
-**Location:** `pneumonia_hybrid_qml.ipynb` (section 7 VQC training)
+**Location:** `notebooks_archive/pneumonia_hybrid_qml.ipynb` (section 7 VQC training)
 
 **Role:**
 The quantum classification layer. Receives a 64-dimensional L2-normalised feature vector, encodes it as quantum amplitudes, applies a trainable variational ansatz, and returns a scalar score ∈ [−1, 1] (expectation value of Pauli-Z on qubit 0).
@@ -207,7 +207,7 @@ def circuit(x, params):
 
 **Type:** Multi-layer perceptron (classical)  
 **Framework:** PyTorch  
-**Location:** `pneumonia_hybrid_qml.ipynb` (section 7b / MLP baseline)
+**Location:** `notebooks_archive/pneumonia_hybrid_qml.ipynb` (section 7b / MLP baseline)
 
 **Role:**
 Reference classifier operating on the same 64-dimensional PCA features as the VQC. Used for direct performance comparison under identical input conditions.
@@ -242,7 +242,7 @@ nn.Sequential(
 **Provider:** IBM Quantum Cloud  
 **Device:** current Heron r2 (e.g. `ibm_kingston`, 156 qubits) — auto-selected at runtime via `service.least_busy()`; `ibm_brisbane`/`ibm_sherbrooke` retired 2025  
 **Framework:** Qiskit IBM Runtime + pennylane-qiskit  
-**Location:** `pneumonia_hybrid_qml.ipynb` (sections 7.1 QPU Inference + ZNE)
+**Location:** `notebooks_archive/pneumonia_hybrid_qml.ipynb` (sections 7.1 QPU Inference + ZNE)
 
 **Role:**
 Runs inference-only on real quantum hardware using trained VQC parameters from step 3. Evaluates a subset of the test set (~50–100 samples) to quantify the gap between ideal simulation and physical noise.
@@ -275,7 +275,7 @@ Train on simulator. Evaluate on hardware. Do not run the full training loop on I
 
 **Type:** Classical post-processing agent  
 **Framework:** Mitiq 1.0.0+  
-**Location:** `pneumonia_hybrid_qml.ipynb` (sections 7.1 QPU Inference + ZNE)
+**Location:** `notebooks_archive/pneumonia_hybrid_qml.ipynb` (sections 7.1 QPU Inference + ZNE)
 
 **Role:**
 Applies Zero-Noise Extrapolation (ZNE) to hardware results. Runs each circuit at noise scale factors [1×, 2×, 3×] by gate-folding, then extrapolates to the zero-noise limit using Richardson extrapolation. Significantly improves raw hardware accuracy.
@@ -311,7 +311,7 @@ mitigated = mitiq.zne.execute_with_zne(
 
 **Type:** Software simulation  
 **Framework:** PennyLane + `default.mixed` backend  
-**Location:** `pneumonia_hybrid_qml.ipynb` (7.1.5 FakeKingston noisy baseline; `default.mixed` ablation planned)
+**Location:** `notebooks_archive/pneumonia_hybrid_qml.ipynb` (7.1.5 FakeKingston noisy baseline; `default.mixed` ablation planned)
 
 **Role:**
 Simulates the effect of hardware noise by injecting depolarising channels after every gate. Used to produce the noise degradation curve without consuming IBM queue time.
@@ -341,7 +341,7 @@ def noisy_circuit(x, params, p_noise):
 
 **Type:** Post-processing script (classical)  
 **Framework:** NumPy + scikit-learn  
-**Location:** `pneumonia_hybrid_qml.ipynb` (section 8.1 Threshold Selection)
+**Location:** `notebooks_archive/pneumonia_hybrid_qml.ipynb` (section 8.1 Threshold Selection)
 
 **Role:**
 Selects the optimal classification threshold τ by maximising balanced accuracy on the **validation set only**. The chosen τ is then applied once to the test set. Prevents the data leakage present in the original version (which scanned thresholds on test data).
@@ -374,7 +374,7 @@ test_preds = (test_probs > best_tau).astype(int)
 
 **Type:** Post-processing script (classical)  
 **Framework:** scikit-learn + statsmodels + scipy  
-**Location:** `pneumonia_hybrid_qml.ipynb` (section 8) + `03b_feature_analysis.ipynb` / `03d_predictions_analysis.ipynb`
+**Location:** `notebooks_archive/pneumonia_hybrid_qml.ipynb` (section 8) + `notebooks_archive/03b_feature_analysis.ipynb` / `notebooks_archive/03d_predictions_analysis.ipynb`
 
 **Role:**
 Produces all metrics, statistical significance tests, and confidence intervals needed for the thesis results chapter.
@@ -411,7 +411,7 @@ ci_low, ci_high = np.percentile(aucs, [2.5, 97.5])
 
 **Type:** Interpretability agent (classical)  
 **Framework:** PyTorch + `pytorch-grad-cam`  
-**Location:** `03e_gradcam_analysis.ipynb` + `pneumonia_hybrid_qml.ipynb` (Grad-CAM section)
+**Location:** `notebooks_archive/03e_gradcam_analysis.ipynb` + `notebooks_archive/pneumonia_hybrid_qml.ipynb` (Grad-CAM section)
 
 **Role:**
 Generates class activation maps showing which regions of the chest X-ray the ConvNeXt-Tiny feature extractor attends to. Provides interpretability evidence for the thesis discussion section.
