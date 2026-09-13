@@ -37,6 +37,9 @@ ibm_token.txt
 
 # Pipeline artifacts
 results/*.npy
+results/*.json
+results/*.csv
+results/*.pt
 artifacts/features/*.npy
 .pytest_cache/
 *.egg-info/
