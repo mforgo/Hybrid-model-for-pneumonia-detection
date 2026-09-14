@@ -637,12 +637,18 @@ class FeatureCache:
             change invalidates the cache.
         git_sha: Git commit the features were extracted from.
         timestamp: ISO-8601 extraction time (UTC).
+        raw_features: Whether the pre-DANN raw features
+            (``convnext_tiny_raw_{train,val,test}.npy``) were saved alongside
+            the adapted features. Defaults to ``False`` so cache files written
+            before this field existed still load (``FeatureCache.load`` passes
+            the stored keys through ``cls(**data)``).
     """
 
     feat_hash: str
     config_hash: str
     git_sha: str
     timestamp: str
+    raw_features: bool = False
 
     def is_valid(self, cfg_hash: str) -> bool:
         """``True`` if the cached features were produced by this config."""
@@ -700,13 +706,24 @@ def extract_or_load(cfg: Any, loaders: dict[str, Any]) -> dict[str, np.ndarray]:
     Artifacts (relative to ``cfg.artifacts_dir``)::
 
         artifacts/features/convnext_tiny_{train,val,test}.npy   (N, 768)
+        artifacts/features/convnext_tiny_raw_{train,val,test}.npy  (N, 768, pre-DANN)
         artifacts/features/y_{train,val,test}.npy               (N,)
         artifacts/features/dann_convnext_finetuned.pt           (only if DANN fine-tuned)
         artifacts/features/feature_meta.json                    (FeatureCache)
 
+    The ``convnext_tiny_raw_*.npy`` arrays are the **pre-DANN** backbone
+    outputs — the exact features that feed the domain-adversarial head. They
+    are saved whenever ``cfg.save_raw_features`` is true (default ``True``,
+    via ``getattr`` so the field may be absent in other environments) and let
+    the analysis stage quantify the DANN effect with a domain discriminator
+    (``pipeline.analysis.run_dann_validation``). When ``save_raw_features``
+    is false the raw arrays are skipped (backward compatible).
+
     Cache validity: ``feature_meta.json`` exists AND its ``config_hash``
-    equals ``config_hash(cfg)`` AND all six ``.npy`` files exist → load from
-    disk instead of re-extracting. Any config change invalidates the cache.
+    equals ``config_hash(cfg)`` AND all six ``.npy`` files exist AND (when
+    ``save_raw_features`` is true) the three raw ``.npy`` files exist → load
+    from disk instead of re-extracting. Any config change invalidates the
+    cache.
 
     Args:
         cfg: Configuration object (``pipeline.config.Config``).
@@ -727,16 +744,29 @@ def extract_or_load(cfg: Any, loaders: dict[str, Any]) -> dict[str, np.ndarray]:
     meta_path = feat_dir / "feature_meta.json"
     splits = ("train", "val", "test")
 
+    # Pre-DANN raw features feed the DANN quantitative validation (analysis
+    # stage). save_raw_features defaults True via getattr (field may be absent
+    # in other environments).
+    save_raw_features = bool(getattr(cfg, "save_raw_features", True))
+    raw_present = all(
+        (feat_dir / f"convnext_tiny_raw_{s}.npy").is_file() for s in splits
+    )
+
     # Cache hit: metadata present, config hash matches, all arrays exist.
     if meta_path.is_file():
         try:
             cache = FeatureCache.load(meta_path)
         except Exception:  # noqa: BLE001 - corrupt metadata -> re-extract
             cache = None
-        if cache is not None and cache.is_valid(cfg_hash) and all(
-            (feat_dir / f"convnext_tiny_{s}.npy").is_file()
-            and (feat_dir / f"y_{s}.npy").is_file()
-            for s in splits
+        if (
+            cache is not None
+            and cache.is_valid(cfg_hash)
+            and all(
+                (feat_dir / f"convnext_tiny_{s}.npy").is_file()
+                and (feat_dir / f"y_{s}.npy").is_file()
+                for s in splits
+            )
+            and (not save_raw_features or raw_present)
         ):
             print(
                 f"[features] Cache hit (config_hash={cfg_hash[:12]}...) — "
@@ -753,6 +783,14 @@ def extract_or_load(cfg: Any, loaders: dict[str, Any]) -> dict[str, np.ndarray]:
     X_train, y_train = _extract_forward(model, loaders["train_loader"], device)
     X_val, y_val = _extract_forward(model, loaders["val_loader"], device)
     X_test, y_test = _extract_forward(model, loaders["test_loader"], device)
+
+    # Persist the PRE-DANN ("raw") features — the exact DANN-INPUT features
+    # that feed the domain-adversarial head. The analysis stage uses them to
+    # quantify the DANN effect (domain-discriminator accuracy pre vs post).
+    if save_raw_features:
+        feat_dir.mkdir(parents=True, exist_ok=True)
+        for split, X in zip(splits, (X_train, X_val, X_test)):
+            np.save(feat_dir / f"convnext_tiny_raw_{split}.npy", X)
 
     # Optional DANN fine-tuning on top of the frozen-backbone features.
     use_dann = bool(getattr(cfg, "use_dann", True))
@@ -778,6 +816,7 @@ def extract_or_load(cfg: Any, loaders: dict[str, Any]) -> dict[str, np.ndarray]:
         config_hash=cfg_hash,
         git_sha=_git_sha(),
         timestamp=datetime.now(timezone.utc).isoformat(),
+        raw_features=save_raw_features,
     )
     cache.save(meta_path)
 
