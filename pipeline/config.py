@@ -45,6 +45,7 @@ class Config:
     dataset_path: str = ""
     img_size: int = 224
     val_split: float = 0.20
+    split_strategy: str = "patient_grouped"  # "patient_grouped" | "random"
     subset: int | None = None
 
     # Augmentation

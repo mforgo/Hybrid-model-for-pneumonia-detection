@@ -18,6 +18,7 @@ dataset: "paultimothymooney/chest-xray-pneumonia"
 dataset_path: ""  # manual override for pre-downloaded dataset
 img_size: 224
 val_split: 0.20
+split_strategy: "patient_grouped"  # "patient_grouped" | "random"
 
 # -----------------------------------------------------------------------------
 # Augmentation

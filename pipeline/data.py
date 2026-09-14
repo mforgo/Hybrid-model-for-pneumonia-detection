@@ -6,9 +6,12 @@ implements the locked design decisions from the rewrite plan (Task 4):
 * **Deterministic collection** — paths are always sorted before any split so
   that labels and features are generated in one canonical order (fixes the
   notebook's misordered-labels bug).
-* **Stratified, seeded split** — the original ``val`` split (16 images) is
-  merged with ``train`` and re-split 80/20 with stratification. The original
-  ``test`` split is kept untouched.
+* **Patient-grouped, seeded split** — the original ``val`` split (16 images)
+  is merged with ``train`` and re-split 80/20 by *patient group*
+  (``person{N}_{etiology}``), so no patient appears in both train and
+  validation (fixes the Kermany patient leakage). The original ``test``
+  split is kept untouched. ``split_strategy="random"`` restores the previous
+  per-image stratified behaviour.
 * **Medical-safe augmentation** — train-only ``RandomRotation(±7°)``,
   ``RandomAffine(translate=±5%)`` and ``ColorJitter(0.2/0.2)``. Horizontal
   flip and RandAugment are intentionally **not** used (harmful for X-rays).
@@ -28,6 +31,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -44,7 +48,9 @@ __all__ = [
     "XRayDataset",
     "download_dataset",
     "collect_paths_labels",
+    "extract_patient_group_id",
     "split_data",
+    "group_split_data",
     "get_transforms",
     "get_loaders",
 ]
@@ -88,6 +94,11 @@ class DatasetMeta:
         test_paths: Test image paths (canonical sorted order).
         seed: Random seed used for the split.
         val_split: Validation fraction used for the split.
+        split_strategy: ``"patient_grouped"`` or ``"random"``.
+        n_train_groups: Number of distinct patient groups in train.
+        n_val_groups: Number of distinct patient groups in validation.
+        shared_group_ids: Group ids present in BOTH splits — must be empty
+            for a leakage-free patient-grouped split.
     """
 
     train_count: int
@@ -101,6 +112,10 @@ class DatasetMeta:
     test_paths: list[Path] = field(default_factory=list)
     seed: int = 6
     val_split: float = 0.20
+    split_strategy: str = "patient_grouped"
+    n_train_groups: int = 0
+    n_val_groups: int = 0
+    shared_group_ids: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serialisable representation (paths as strings)."""
@@ -116,6 +131,10 @@ class DatasetMeta:
             "test_paths": [str(p) for p in self.test_paths],
             "seed": self.seed,
             "val_split": self.val_split,
+            "split_strategy": self.split_strategy,
+            "n_train_groups": self.n_train_groups,
+            "n_val_groups": self.n_val_groups,
+            "shared_group_ids": list(self.shared_group_ids),
         }
 
 
@@ -324,6 +343,108 @@ def split_data(
     return train_paths, val_paths, train_labels, val_labels
 
 
+# ---------------------------------------------------------------------------
+# Patient-grouped split (Kermany leakage fix)
+# ---------------------------------------------------------------------------
+
+#: Regex matching Kermany filenames: ``person369_bacteria_1680.jpeg``.
+#: Captures the numeric patient id and the etiology namespace.
+_PATIENT_FILE_RE = re.compile(r"^person(\d+)_([a-z]+)_\d+\.(?:jpe?g|png)$", re.I)
+
+
+def is_patient_file(path: Path | str) -> bool:
+    """Return ``True`` if *path* matches the Kermany ``person{N}_{etiology}`` pattern."""
+    return _PATIENT_FILE_RE.match(Path(str(path)).name) is not None
+
+
+def extract_patient_group_id(path: Path | str) -> str:
+    """Extract the *namespace-aware* patient group id from a Kermany filename.
+
+    Kermany filenames encode both the numeric patient id and the etiology
+    (e.g. ``person369_bacteria_1680.jpeg``).  The numeric id alone is NOT a
+    safe grouping key: ids such as ``person100`` were reused across the
+    bacterial and viral subfolders for completely different patients.  The
+    group id therefore combines both namespaces:
+
+    * ``person369_bacteria_1680.jpeg`` → ``"person369_bacteria"``
+    * ``person100_virus_2.jpeg``       → ``"person100_virus"``
+
+    Files that do not match the Kermany pattern fall back to their full
+    file stem, i.e. every such image becomes its own singleton group
+    (no accidental grouping of unrelated files).
+
+    Args:
+        path: Image path (any suffix / directory depth).
+
+    Returns:
+        The namespace-aware group id string.
+    """
+    name = Path(str(path)).name
+    match = _PATIENT_FILE_RE.match(name)
+    if match is None:
+        return name[: name.rfind(".")] if "." in name else name
+    return f"person{match.group(1)}_{match.group(2).lower()}"
+
+
+def group_split_data(
+    paths: Sequence[Path],
+    labels: Sequence[int],
+    groups: Sequence[str],
+    val_split: float = 0.20,
+    seed: int = 6,
+) -> tuple[list[Path], list[Path], list[int], list[int]]:
+    """Patient-grouped, seeded train/validation split.
+
+    Uses :class:`sklearn.model_selection.GroupShuffleSplit` so that every
+    image of one patient (same namespace-aware group id) lands in exactly one
+    of the two splits.  This eliminates the patient leakage of the previous
+    per-image stratified split, where X-rays of the same patient could appear
+    in both train and validation.
+
+    Args:
+        paths: Image paths.
+        labels: Integer labels aligned with ``paths``.
+        groups: Patient group ids aligned with ``paths``.
+        val_split: Fraction assigned to validation (default 0.20).
+        seed: Random seed (project convention: 6).
+
+    Returns:
+        ``(train_paths, val_paths, train_labels, val_labels)``.
+
+    Raises:
+        ValueError: If lengths mismatch or ``val_split`` is out of range.
+    """
+    try:
+        from sklearn.model_selection import GroupShuffleSplit
+    except ImportError as exc:  # pragma: no cover - dev env has sklearn
+        raise ImportError(
+            "group_split_data requires scikit-learn (pip install scikit-learn)"
+        ) from exc
+
+    paths = list(paths)
+    labels = list(labels)
+    groups = list(groups)
+    if not (len(paths) == len(labels) == len(groups)):
+        raise ValueError(
+            f"paths/labels/groups length mismatch: {len(paths)} != "
+            f"{len(labels)} != {len(groups)}"
+        )
+    if not 0.0 < val_split < 1.0:
+        raise ValueError(f"val_split must be in (0, 1), got {val_split}")
+
+    splitter = GroupShuffleSplit(n_splits=1, test_size=val_split, random_state=seed)
+    train_idx, val_idx = next(splitter.split(np.arange(len(paths)), labels, groups))
+
+    train_idx = sorted(int(i) for i in train_idx)
+    val_idx = sorted(int(i) for i in val_idx)
+
+    train_paths = [paths[i] for i in train_idx]
+    val_paths = [paths[i] for i in val_idx]
+    train_labels = [labels[i] for i in train_idx]
+    val_labels = [labels[i] for i in val_idx]
+    return train_paths, val_paths, train_labels, val_labels
+
+
 def _limit_split(
     paths: Sequence[Path],
     labels: Sequence[int],
@@ -471,17 +592,21 @@ def _save_dataset_meta(cfg: Any, meta: DatasetMeta) -> Path:
 def get_loaders(cfg: Any) -> dict[str, Any]:
     """Build train/val/test DataLoaders and dataset metadata.
 
-    The original ``train`` and ``val`` splits are merged and re-split 80/20
-    with stratification; the original ``test`` split is left untouched. The
-    train loader shuffles with a seeded ``torch.Generator`` and does **not**
-    use a ``WeightedRandomSampler`` (imbalance is handled by the MLP's
+    The original ``train`` and ``val`` splits are merged and re-split 80/20.
+    By default the re-split is *patient-grouped* (``split_strategy ==
+    "patient_grouped"``) so no patient appears in both train and validation;
+    ``split_strategy == "random"`` restores the previous per-image stratified
+    behaviour. The original ``test`` split is left untouched. The train loader
+    shuffles with a seeded ``torch.Generator`` and does **not** use a
+    ``WeightedRandomSampler`` (imbalance is handled by the MLP's
     ``pos_weight`` downstream).
 
     Args:
         cfg: Configuration object. Recognised fields: ``dataset``,
-            ``dataset_path``, ``img_size``, ``val_split``, ``batch_size``,
-            ``seed``, ``artifacts_dir``, augmentation fields, plus optional
-            ``subset`` (limit N samples per split) and ``n_workers``.
+            ``dataset_path``, ``img_size``, ``val_split``, ``split_strategy``,
+            ``batch_size``, ``seed``, ``artifacts_dir``, augmentation fields,
+            plus optional ``subset`` (limit N samples per split) and
+            ``n_workers``.
 
     Returns:
         Dict with keys ``train_loader``, ``val_loader``, ``test_loader``,
@@ -495,13 +620,14 @@ def get_loaders(cfg: Any) -> dict[str, Any]:
 
     seed = int(getattr(cfg, "seed", 6))
     val_split = float(getattr(cfg, "val_split", 0.20))
+    split_strategy = str(getattr(cfg, "split_strategy", "patient_grouped")).lower()
     batch_size = int(getattr(cfg, "batch_size", 16))
     n_workers = int(getattr(cfg, "n_workers", 0))
     subset = getattr(cfg, "subset", None)
 
     root = download_dataset(cfg)
 
-    # Merge original train + val, then re-split stratified.
+    # Merge original train + val, then re-split (patient-grouped by default).
     train_paths_raw, train_labels_raw = collect_paths_labels(root, "train")
     val_paths_raw, val_labels_raw = collect_paths_labels(root, "val")
     merged = sorted(
@@ -511,9 +637,27 @@ def get_loaders(cfg: Any) -> dict[str, Any]:
     all_paths = [path for path, _ in merged]
     all_labels = [label for _, label in merged]
 
-    train_paths, val_paths, train_labels, val_labels = split_data(
-        all_paths, all_labels, val_split, seed
-    )
+    shared_group_ids: list[str] = []
+    if split_strategy == "patient_grouped":
+        groups = [extract_patient_group_id(path) for path in all_paths]
+        train_paths, val_paths, train_labels, val_labels = group_split_data(
+            all_paths, all_labels, groups, val_split, seed
+        )
+        train_group_ids = {extract_patient_group_id(p) for p in train_paths}
+        val_group_ids = {extract_patient_group_id(p) for p in val_paths}
+        shared_group_ids = sorted(train_group_ids & val_group_ids)
+        if shared_group_ids:
+            warnings.warn(
+                f"Patient-grouped split produced {len(shared_group_ids)} "
+                "group(s) present in BOTH train and validation: "
+                f"{shared_group_ids[:5]}...",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+    else:
+        train_paths, val_paths, train_labels, val_labels = split_data(
+            all_paths, all_labels, val_split, seed
+        )
     test_paths, test_labels = collect_paths_labels(root, "test")
 
     # Optional smoke-test subset (stratified so both classes survive).
@@ -573,6 +717,10 @@ def get_loaders(cfg: Any) -> dict[str, Any]:
         test_paths=test_paths,
         seed=seed,
         val_split=val_split,
+        split_strategy=split_strategy,
+        n_train_groups=len({extract_patient_group_id(p) for p in train_paths}),
+        n_val_groups=len({extract_patient_group_id(p) for p in val_paths}),
+        shared_group_ids=shared_group_ids,
     )
     _save_dataset_meta(cfg, meta)
 
