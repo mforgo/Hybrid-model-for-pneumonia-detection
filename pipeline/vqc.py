@@ -313,8 +313,11 @@ def combined_loss(
         coral = _coral(preds_base, preds_tgt)
         return base_mse + mixup_mse + lambda_coral * coral
 
-    loss = _loss(params)
-    grads = qml.grad(_loss)(params)
+    # PennyLane 0.45 autograd: qml.grad returns () for plain numpy args;
+    # wrap as a trainable tensor or training crashes on an empty gradient.
+    params_t = qml.numpy.array(params, requires_grad=True)
+    loss = _loss(params_t)
+    grads = qml.grad(_loss)(params_t)
     return loss, grads
 
 
@@ -341,7 +344,9 @@ def vqc_predict(X, params, circuit) -> np.ndarray:
     if single:
         X = X.reshape(1, -1)
     X_norm = _l2_normalize(X)
-    z = np.asarray(circuit(params, X_norm))
+    # PennyLane 0.45 cannot batch (B, 64) inputs with per-sample gate
+    # arguments (broadcast-expand raises); evaluate per sample instead.
+    z = np.array([float(circuit(params, row)) for row in X_norm])
     probs = (1.0 + z) / 2.0
     if single:
         probs = probs[0]
@@ -562,7 +567,7 @@ def train_vqc(
             n_batches += 1
 
         # --- validation (forward pass only) ---
-        z_val = np.asarray(circuit(params, X_val))
+        z_val = np.array([float(circuit(params, row)) for row in X_val])
         val_loss = float(np.mean((z_val - y_val_pm1) ** 2))
         val_probs_epoch = (1.0 + z_val) / 2.0
         val_bal_acc = float(
