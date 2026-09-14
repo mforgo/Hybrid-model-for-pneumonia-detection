@@ -55,7 +55,9 @@ __all__ = [
     "mcnemar_exact",
     "bootstrap_ci",
     "plot_roc",
+    "plot_multi_roc",
     "plot_confusion_matrices",
+    "plot_confusion_grid",
     "plot_confidence_distribution",
     "plot_training_curves",
     "save_results",
@@ -444,6 +446,47 @@ def plot_roc(y_true, y_probs, path, label) -> None:
     plt.close(fig)
 
 
+def plot_multi_roc(y_true, probs_by_model, path, title=None) -> None:
+    """Plot one ROC curve per model with the AUC in the legend.
+
+    Renders a single figure with one ROC curve per entry of
+    *probs_by_model* (AUC annotated in the legend) plus the dashed
+    chance diagonal. Uses the Agg backend and saves at ``dpi=150`` with
+    ``bbox_inches="tight"`` (same convention as :func:`plot_roc`).
+
+    Args:
+        y_true: Ground-truth binary labels (0/1), shape ``(N,)``.
+        probs_by_model: Maps model name → predicted probabilities, shape
+            ``(N,)``.
+        path: Output PNG path (parent directories are created).
+        title: Optional figure title (default ``"ROC Curves"``).
+    """
+    plt = _import_matplotlib()
+    metrics_mod = _import_sklearn_metrics()
+
+    y_true = np.asarray(y_true, dtype=np.int64)
+
+    fig, ax = plt.subplots(figsize=(6, 6))
+    for name, probs in probs_by_model.items():
+        probs = np.asarray(probs, dtype=np.float64)
+        fpr, tpr, _ = metrics_mod.roc_curve(y_true, probs)
+        auc = float(metrics_mod.roc_auc_score(y_true, probs))
+        ax.plot(fpr, tpr, lw=2, label=f"{name} (AUC = {auc:.4f})")
+    ax.plot([0, 1], [0, 1], "k--", lw=1, alpha=0.6, label="Chance")
+    ax.set_xlabel("False Positive Rate")
+    ax.set_ylabel("True Positive Rate")
+    ax.set_title(title or "ROC Curves")
+    ax.set_xlim([0.0, 1.0])
+    ax.set_ylim([0.0, 1.05])
+    ax.legend(loc="lower right")
+    ax.grid(alpha=0.3)
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 def plot_confusion_matrices(cm_vqc, cm_mlp, path) -> None:
     """Plot side-by-side confusion-matrix heatmaps for VQC and MLP.
 
@@ -471,6 +514,67 @@ def plot_confusion_matrices(cm_vqc, cm_mlp, path) -> None:
             for j in range(cm.shape[1]):
                 ax.text(j, i, str(cm[i, j]), ha="center", va="center", color="black")
         fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    fig.tight_layout()
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_confusion_grid(y_true, preds_by_model, path) -> None:
+    """Plot confusion-matrix heatmaps for multiple models in a grid.
+
+    Renders one 2×2 confusion matrix per model in *preds_by_model* (rows =
+    true, cols = predicted). Uses a 1×n layout for up to two models and a
+    ``ceil(n/2) × 2`` grid for more, matching the style of
+    :func:`plot_confusion_matrices`. The single-model case produces a 1×1
+    figure with the same heatmap conventions.
+
+    Args:
+        y_true: Ground-truth binary labels (0/1), shape ``(N,)``.
+        preds_by_model: Maps model name → hard predictions (0/1), shape
+            ``(N,)``.
+        path: Output PNG path (parent directories are created).
+    """
+    plt = _import_matplotlib()
+
+    y_true = np.asarray(y_true, dtype=np.int64)
+    names = list(preds_by_model.keys())
+    n = len(names)
+    if n == 0:
+        raise ValueError("preds_by_model must contain at least one model.")
+
+    ncols = 2 if n > 1 else 1
+    nrows = int(np.ceil(n / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 4.5 * nrows))
+    axes = np.atleast_1d(axes).ravel()
+
+    for ax, name in zip(axes, names):
+        preds = np.asarray(preds_by_model[name], dtype=np.int64)
+        cm = np.array([
+            [np.sum((preds == 0) & (y_true == 0)),
+             np.sum((preds == 1) & (y_true == 0))],
+            [np.sum((preds == 0) & (y_true == 1)),
+             np.sum((preds == 1) & (y_true == 1))],
+        ])
+        im = ax.imshow(cm, cmap="Blues")
+        ax.set_title(name)
+        ax.set_xticks([0, 1])
+        ax.set_yticks([0, 1])
+        ax.set_xticklabels(["Normal", "Pneumonia"])
+        ax.set_yticklabels(["Normal", "Pneumonia"])
+        ax.set_xlabel("Predicted")
+        ax.set_ylabel("True")
+        for i in range(cm.shape[0]):
+            for j in range(cm.shape[1]):
+                ax.text(j, i, str(cm[i, j]), ha="center", va="center", color="black")
+        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+
+    # Hide unused axes in the last row (e.g. 3 models → 2×2 grid).
+    for ax in axes[n:]:
+        ax.set_visible(False)
+
     fig.tight_layout()
 
     path = Path(path)

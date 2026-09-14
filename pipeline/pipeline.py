@@ -8,6 +8,12 @@ Stages (execution order for ``--stage all``):
 
     data → features → vae/svae → ansatz → train → evaluate → qpu → analysis
 
+``benchmark`` is a standalone stage (excluded from ``all``): it trains every
+model in ``cfg.models`` via the model registry and writes the comparison
+CSVs (``results/benchmark_comparison.csv``, ``results/benchmark_mcnemar.csv``)
+plus the ``figures/benchmark_roc.png`` / ``figures/benchmark_auc_bar.png``
+figures.
+
 Override prefix → flat field mapping (``--overrides``)::
 
     data.subset        → subset
@@ -35,6 +41,7 @@ import json
 import subprocess
 import sys
 import traceback
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -67,6 +74,7 @@ STAGES: tuple[str, ...] = (
     "evaluate",
     "qpu",
     "analysis",
+    "benchmark",
     "all",
 )
 
@@ -89,14 +97,7 @@ _STAGE_ARTIFACTS: dict[str, list[str]] = {
         "artifacts/features/vae_meta.json",
     ],
     "ansatz": ["results/ansatz_meta.json"],
-    "train": [
-        "results/vqc_best_params.npy",
-        "results/vqc_history.json",
-        "results/vqc_val_probs.npy",
-        "results/mlp_best.pt",
-        "results/mlp_history.json",
-        "results/mlp_val_probs.npy",
-    ],
+    # NOTE: "train" is model-dynamic — see _train_stage_artifacts(cfg).
     "evaluate": [
         "results/main_results.csv",
         "results/run_manifest.json",
@@ -106,6 +107,10 @@ _STAGE_ARTIFACTS: dict[str, list[str]] = {
         "results/vqc_fakekingston_probs.npy",
     ],
     "analysis": ["results/cv_results.json"],
+    "benchmark": [
+        "results/benchmark_comparison.csv",
+        "results/benchmark_mcnemar.csv",
+    ],
 }
 
 #: Meta file per stage that stores ``config_hash`` for cache validation.
@@ -119,7 +124,43 @@ _STAGE_META: dict[str, str] = {
     "evaluate": "results/run_manifest.json",
     "qpu": "results/run_manifest.json",
     "analysis": "results/cv_results.json",
+    "benchmark": "results/benchmark_meta.json",
 }
+
+
+def _train_stage_artifacts(cfg: Config) -> list[str]:
+    """Per-model artifact list for the ``train`` stage (model-dynamic).
+
+    Builds the expected ``results/{model}_*.npy`` / ``.json`` / ``.pt``
+    artifact paths from ``cfg.models`` so the cache check covers exactly the
+    models the current configuration trains. The params artifact depends on
+    the model kind: ``{model}_best_params.npy`` for VQC variants,
+    ``{model}_best.pt`` for torch models and ``{model}_params.json`` for
+    sklearn / quantum-kernel models.
+
+    Args:
+        cfg: Current configuration (``models`` field).
+
+    Returns:
+        List of artifact paths relative to the repo root.
+    """
+    from pipeline import models  # lazy: models.py imports numpy
+
+    artifacts: list[str] = []
+    for name in getattr(cfg, "models", ["vqc", "mlp"]):
+        artifacts.append(f"results/{name}_val_probs.npy")
+        artifacts.append(f"results/{name}_history.json")
+        try:
+            spec = models.get_model(name)
+        except KeyError:
+            continue
+        if spec.kind == "vqc":
+            artifacts.append(f"results/{name}_best_params.npy")
+        elif spec.kind == "torch":
+            artifacts.append(f"results/{name}_best.pt")
+        else:
+            artifacts.append(f"results/{name}_params.json")
+    return artifacts
 
 
 # ---------------------------------------------------------------------------
@@ -288,7 +329,10 @@ def _stage_cache_status(
         meta file's ``config_hash`` matches *key*, else ``False`` with a
         human-readable reason string.
     """
-    artifacts = _STAGE_ARTIFACTS.get(stage, [])
+    if stage == "train":
+        artifacts = _train_stage_artifacts(cfg)
+    else:
+        artifacts = _STAGE_ARTIFACTS.get(stage, [])
     meta_rel = _STAGE_META.get(stage)
     meta_path = Path(meta_rel) if meta_rel else None
     cfg_hash = key["config_hash"]
@@ -469,27 +513,91 @@ def _run_ansatz(cfg: Config, dry_run: bool = False) -> None:
     print(f"  ✓ ansatz: saved {meta_path}")
 
 
+def _save_train_artifacts(results_dir: Path, name: str, result: dict[str, Any]) -> None:
+    """Save per-model train artifacts with the ``{name}_...`` prefix.
+
+    Mirrors the artifact naming that ``pipeline.vqc.train_vqc`` /
+    ``pipeline.mlp.train_mlp`` already use (``vqc_*`` / ``mlp_*``) so the
+    analysis / qpu stages and the run manifest keep working unchanged. The
+    params artifact is chosen by what the result dict carries: ``best_params``
+    (VQC variants) → ``{name}_best_params.npy``, ``best_state`` (torch) →
+    ``{name}_best.pt``, else ``params`` (sklearn / quantum kernel) →
+    ``{name}_params.json``.
+
+    Args:
+        results_dir: Output directory (``cfg.results_dir``).
+        name: Model name (registry key).
+        result: Train result dict from the ``ModelSpec.train`` contract.
+    """
+    import numpy as np
+
+    results_dir.mkdir(parents=True, exist_ok=True)
+
+    np.save(results_dir / f"{name}_val_probs.npy", np.asarray(result["val_probs"]))
+    if result.get("test_probs") is not None:
+        np.save(results_dir / f"{name}_test_probs.npy", np.asarray(result["test_probs"]))
+
+    with open(results_dir / f"{name}_history.json", "w", encoding="utf-8") as f:
+        json.dump(result.get("history", {}), f, indent=2)
+
+    if result.get("best_params") is not None:
+        np.save(results_dir / f"{name}_best_params.npy", np.asarray(result["best_params"]))
+    elif result.get("best_state") is not None:
+        try:
+            import torch  # lazy: torch is optional at import time
+
+            torch.save(result["best_state"], results_dir / f"{name}_best.pt")
+        except ImportError:
+            with open(results_dir / f"{name}_params.json", "w", encoding="utf-8") as f:
+                json.dump(result["best_state"], f, indent=2, default=str)
+    elif result.get("params") is not None:
+        with open(results_dir / f"{name}_params.json", "w", encoding="utf-8") as f:
+            json.dump(result["params"], f, indent=2, default=str)
+
+
 def _run_train(cfg: Config, dry_run: bool = False) -> None:
-    """Dispatch the ``train`` stage: train VQC + MLP on 64-dim VAE features."""
+    """Dispatch the ``train`` stage: train every model in ``cfg.models``."""
     if dry_run:
-        print(f"  → train: would train VQC+MLP → {_STAGE_ARTIFACTS['train']}")
+        print(f"  → train: would train {', '.join(cfg.models)} → {_train_stage_artifacts(cfg)}")
         return
-    from pipeline.mlp import train_mlp
-    from pipeline.vqc import train_vqc
+    import time
+
+    import numpy as np
+    from pipeline import models
 
     vae = _load_vae_features(cfg)
     X_tr, y_tr = vae["X_train"], vae["y_train"]
     X_va, y_va = vae["X_val"], vae["y_val"]
     X_te, y_te = vae["X_test"], vae["y_test"]
 
-    print("  ── VQC training ──")
-    vqc_result = train_vqc(cfg, X_tr, y_tr, X_va, y_va, X_te, y_te)
+    results_dir = Path(cfg.results_dir)
+    results_dir.mkdir(parents=True, exist_ok=True)
 
-    print("  ── MLP training ──")
-    mlp_result = train_mlp(cfg, X_tr, y_tr, X_va, y_va, X_te, y_te)
+    trained: dict[str, int] = {}
+    for name in cfg.models:
+        spec = models.get_model(name)
+        print(f"  ── {name} training ──")
+        t0 = time.perf_counter()
+        try:
+            result = spec.train(cfg, X_tr, y_tr, X_va, y_va, X_te, y_te)
+        except RuntimeError as exc:
+            if spec.kind == "quantum_kernel":
+                warnings.warn(
+                    f"train: {name} requires missing dependencies: {exc}",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+                print(f"  ⚠ {name}: skipped: missing deps ({exc})")
+                continue
+            raise
+        elapsed = time.perf_counter() - t0
+        _save_train_artifacts(results_dir, name, result)
+        trained[name] = int(result["epochs_trained"])
+        print(f"  ✓ {name}: trained in {elapsed:.2f}s, best_epoch={result['epochs_trained']}")
 
-    print(f"  ✓ train: VQC best_epoch={vqc_result['epochs_trained']}, "
-          f"MLP best_epoch={mlp_result['epochs_trained']}")
+    if trained:
+        summary = ", ".join(f"{n} best_epoch={e}" for n, e in trained.items())
+        print(f"  ✓ train: {summary}")
 
 
 def _run_evaluate(cfg: Config, dry_run: bool = False) -> None:
@@ -502,7 +610,7 @@ def _run_evaluate(cfg: Config, dry_run: bool = False) -> None:
         compute_all_metrics,
         find_best_threshold,
         plot_confidence_distribution,
-        plot_confusion_matrices,
+        plot_confusion_grid,
         plot_roc,
         plot_training_curves,
         save_results,
@@ -513,87 +621,96 @@ def _run_evaluate(cfg: Config, dry_run: bool = False) -> None:
     y_val = feat["y_val"]
     y_test = feat["y_test"]
 
-    # Load model probabilities and histories.
     results_dir = Path(cfg.results_dir)
-    vqc_val_probs = np.load(results_dir / "vqc_val_probs.npy")
-    mlp_val_probs = np.load(results_dir / "mlp_val_probs.npy")
-
-    with open(results_dir / "vqc_history.json", encoding="utf-8") as f:
-        vqc_history = json.load(f)
-    with open(results_dir / "mlp_history.json", encoding="utf-8") as f:
-        mlp_history = json.load(f)
-
-    # Threshold selection on validation set only.
     tau_range = np.arange(
         cfg.threshold_range_min,
         cfg.threshold_range_max + cfg.threshold_step / 2.0,
         cfg.threshold_step,
     )
-    vqc_tau = find_best_threshold(vqc_val_probs, y_val, tau_range)
-    mlp_tau = find_best_threshold(mlp_val_probs, y_val, tau_range)
-    print(f"  evaluate: VQC tau={vqc_tau:.3f}, MLP tau={mlp_tau:.3f}")
 
-    # Compute full metrics at the selected thresholds.
-    vqc_metrics = compute_all_metrics(vqc_val_probs, y_val, vqc_tau)
-    mlp_metrics = compute_all_metrics(mlp_val_probs, y_val, mlp_tau)
-
-    # Load test probs if available (train stage writes them).
-    vqc_test_path = results_dir / "vqc_test_probs.npy"
-    mlp_test_path = results_dir / "mlp_test_probs.npy"
-    vqc_test_probs = np.load(vqc_test_path) if vqc_test_path.is_file() else vqc_val_probs
-    mlp_test_probs = np.load(mlp_test_path) if mlp_test_path.is_file() else mlp_val_probs
-
-    # Assemble probs_dict and params_dict for save_results.
-    probs_dict = {
-        "vqc": {"val": vqc_val_probs, "test": vqc_test_probs},
-        "mlp": {"val": mlp_val_probs, "test": mlp_test_probs},
-    }
-
+    probs_dict: dict[str, Any] = {}
     params_dict: dict[str, Any] = {}
-    vqc_params_path = results_dir / "vqc_best_params.npy"
-    if vqc_params_path.is_file():
-        params_dict["vqc"] = np.load(vqc_params_path)
-    mlp_params_path = results_dir / "mlp_best.pt"
-    if mlp_params_path.is_file():
-        try:
-            import torch
-            params_dict["mlp"] = torch.load(mlp_params_path, map_location="cpu")
-        except ImportError:
-            pass  # save_results handles non-torch fallback
+    history_dict: dict[str, Any] = {}
+    metrics: dict[str, Any] = {}
+    test_probs_by_model: dict[str, np.ndarray] = {}
+    preds_by_model: dict[str, np.ndarray] = {}
 
-    history_dict = {"vqc": vqc_history, "mlp": mlp_history}
+    for name in cfg.models:
+        val_path = results_dir / f"{name}_val_probs.npy"
+        if not val_path.is_file():
+            warnings.warn(
+                f"Skipping {name}: no saved probabilities",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            continue
+        val_probs = np.load(val_path)
+        test_path = results_dir / f"{name}_test_probs.npy"
+        test_probs = np.load(test_path) if test_path.is_file() else val_probs
 
-    metrics = {"vqc": vqc_metrics, "mlp": mlp_metrics}
+        # Threshold selection on validation set only (locked protocol).
+        tau = find_best_threshold(val_probs, y_val, tau_range)
+        m = compute_all_metrics(val_probs, y_val, tau)
+        print(f"  evaluate: {name} tau={tau:.3f}")
+
+        probs_dict[name] = {"val": val_probs, "test": test_probs}
+        metrics[name] = m
+        test_probs_by_model[name] = test_probs
+        preds_by_model[name] = (test_probs > tau).astype(int)
+
+        hist_path = results_dir / f"{name}_history.json"
+        if hist_path.is_file():
+            with open(hist_path, encoding="utf-8") as f:
+                history_dict[name] = json.load(f)
+
+        params_path = results_dir / f"{name}_best_params.npy"
+        if params_path.is_file():
+            params_dict[name] = np.load(params_path)
+        else:
+            pt_path = results_dir / f"{name}_best.pt"
+            if pt_path.is_file():
+                try:
+                    import torch  # lazy: torch is optional at import time
+
+                    params_dict[name] = torch.load(pt_path, map_location="cpu")
+                except ImportError:
+                    pass  # save_results handles non-torch fallback
+            else:
+                json_path = results_dir / f"{name}_params.json"
+                if json_path.is_file():
+                    with open(json_path, encoding="utf-8") as f:
+                        params_dict[name] = json.load(f)
+
+    if not metrics:
+        warnings.warn(
+            "evaluate: no model probabilities found — nothing to evaluate",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return
+
     save_results(cfg, metrics, probs_dict, params_dict, history_dict)
 
     # Figures.
     figures_dir = Path(cfg.figures_dir)
     try:
-        plot_roc(y_test, vqc_test_probs, figures_dir / "roc_vqc.png", "VQC")
-        plot_roc(y_test, mlp_test_probs, figures_dir / "roc_mlp.png", "MLP")
+        for name, test_probs in test_probs_by_model.items():
+            plot_roc(y_test, test_probs, figures_dir / f"roc_{name}.png", name.upper())
     except Exception as exc:  # noqa: BLE001
         print(f"  ⚠ evaluate: ROC plot failed: {exc}")
 
     try:
-        cm_vqc = np.array([
-            [np.sum((vqc_test_probs <= vqc_tau) & (y_test == 0)),
-             np.sum((vqc_test_probs > vqc_tau) & (y_test == 0))],
-            [np.sum((vqc_test_probs <= vqc_tau) & (y_test == 1)),
-             np.sum((vqc_test_probs > vqc_tau) & (y_test == 1))],
-        ])
-        cm_mlp = np.array([
-            [np.sum((mlp_test_probs <= mlp_tau) & (y_test == 0)),
-             np.sum((mlp_test_probs > mlp_tau) & (y_test == 0))],
-            [np.sum((mlp_test_probs <= mlp_tau) & (y_test == 1)),
-             np.sum((mlp_test_probs > mlp_tau) & (y_test == 1))],
-        ])
-        plot_confusion_matrices(cm_vqc, cm_mlp, figures_dir / "confusion_matrices.png")
+        plot_confusion_grid(y_test, preds_by_model, figures_dir / "confusion_matrices.png")
     except Exception as exc:  # noqa: BLE001
         print(f"  ⚠ evaluate: confusion matrix plot failed: {exc}")
 
     try:
-        plot_confidence_distribution(y_test, vqc_test_probs,
-                                     figures_dir / "confidence_distribution.png")
+        if "vqc" in test_probs_by_model:
+            plot_confidence_distribution(
+                y_test,
+                test_probs_by_model["vqc"],
+                figures_dir / "confidence_distribution.png",
+            )
     except Exception as exc:  # noqa: BLE001
         print(f"  ⚠ evaluate: confidence distribution plot failed: {exc}")
 
@@ -706,6 +823,325 @@ def _run_analysis(cfg: Config, dry_run: bool = False) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Benchmark stage (standalone — excluded from ``--stage all``)
+# ---------------------------------------------------------------------------
+
+
+def _round4(value: Any) -> Any:
+    """Round float values to 4 decimals; pass everything else through.
+
+    ``np.float64`` is a subclass of Python ``float``, so a single
+    ``isinstance`` check covers both. Ints (``n_params``, ``epochs_trained``)
+    and strings (``error``) pass through unchanged.
+    """
+    if isinstance(value, float):
+        return round(value, 4)
+    return value
+
+
+def _benchmark_mcnemar(preds_a, preds_b, labels) -> tuple[float, float | None, str]:
+    """Exact McNemar p-value (statsmodels) with scipy chi2 fallback.
+
+    Builds the 2×2 discordant table from ``preds_a`` / ``preds_b`` against
+    the ground-truth *labels* and runs the exact McNemar test via
+    ``statsmodels.stats.contingency_tables.mcnemar`` (lazy import). When
+    statsmodels is missing, falls back to the chi2 approximation with
+    continuity correction ``stat = (|b-c| - 1)^2 / (b+c)`` on 1 dof.
+
+    Args:
+        preds_a: Hard predictions of classifier A, shape ``(N,)``.
+        preds_b: Hard predictions of classifier B, shape ``(N,)``.
+        labels: Ground-truth binary labels (0/1), shape ``(N,)``.
+
+    Returns:
+        ``(p_value, stat, method)`` — ``stat`` is ``None`` for the exact
+        test and the chi2 statistic for the approximation.
+    """
+    preds_a = np.asarray(preds_a)
+    preds_b = np.asarray(preds_b)
+    labels = np.asarray(labels)
+
+    b = float(np.sum((preds_a == labels) & (preds_b != labels)))  # A right, B wrong
+    c = float(np.sum((preds_a != labels) & (preds_b == labels)))  # B right, A wrong
+
+    try:
+        from statsmodels.stats.contingency_tables import mcnemar
+
+        a = float(np.sum((preds_a == labels) & (preds_b == labels)))
+        d = float(np.sum((preds_a != labels) & (preds_b != labels)))
+        table = np.array([[a, b], [c, d]])
+        result = mcnemar(table, exact=True)
+        return float(result.pvalue), None, "statsmodels-exact"
+    except ImportError:
+        try:
+            from scipy.stats import chi2
+        except ImportError as exc:
+            raise RuntimeError(
+                "benchmark McNemar requires statsmodels or scipy "
+                "(pip install statsmodels)."
+            ) from exc
+
+        n = b + c
+        if n == 0:
+            return 1.0, 0.0, "scipy-chi2"
+        stat = (abs(b - c) - 1.0) ** 2 / n
+        return float(chi2.sf(stat, 1)), stat, "scipy-chi2"
+
+
+def _plot_benchmark_auc_bar(rows: list[dict[str, Any]], path: Path) -> None:
+    """Bar chart of test AUC per model (lazy matplotlib, Agg backend)."""
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError as exc:
+        raise RuntimeError(
+            "benchmark AUC bar chart requires matplotlib "
+            "(pip install matplotlib)."
+        ) from exc
+
+    names = [r["model"] for r in rows if r.get("test_auc") not in (None, "")]
+    aucs = [float(r["test_auc"]) for r in rows if r.get("test_auc") not in (None, "")]
+    if not names:
+        raise ValueError("benchmark: no test AUC values to plot")
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.bar(names, aucs, color="tab:blue", alpha=0.85)
+    ax.set_ylabel("Test AUC")
+    ax.set_title("Benchmark test AUC by model")
+    ax.set_ylim(0.0, 1.0)
+    ax.grid(alpha=0.3, axis="y")
+    for i, v in enumerate(aucs):
+        ax.text(i, v + 0.01, f"{v:.4f}", ha="center", va="bottom", fontsize=8)
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _run_benchmark(cfg: Config, dry_run: bool = False) -> None:
+    """Dispatch the ``benchmark`` stage: train all models + comparison CSVs.
+
+    Trains every model in ``cfg.models`` (registry order) on the same VAE
+    features, saves per-model artifacts under ``results/benchmark/<model>/``,
+    then produces ``results/benchmark_comparison.csv`` (per-model metrics at
+    each model's own validation-selected threshold), 
+    ``results/benchmark_mcnemar.csv`` (exact McNemar vs ``vqc``) and the
+    ``figures/benchmark_roc.png`` / ``figures/benchmark_auc_bar.png`` figures.
+    Per-model ``RuntimeError`` (missing deps, sklearn absent) is recorded in
+    the CSV ``error`` column and the loop continues.
+    """
+    if dry_run:
+        print(f"  → benchmark: would train {', '.join(cfg.models)} → "
+              f"results/benchmark/<model>/ + benchmark_comparison.csv")
+        return
+    import csv
+    import time
+
+    import numpy as np
+    from pipeline import models
+    from pipeline.evaluate import (
+        compute_all_metrics,
+        find_best_threshold,
+        plot_multi_roc,
+    )
+
+    if not cfg.models:
+        warnings.warn(
+            "benchmark: cfg.models is empty — nothing to train",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return
+
+    vae = _load_vae_features(cfg)
+    X_tr, y_tr = vae["X_train"], vae["y_train"]
+    X_va, y_va = vae["X_val"], vae["y_val"]
+    X_te, y_te = vae["X_test"], vae["y_test"]
+
+    results_dir = Path(cfg.results_dir)
+    benchmark_dir = results_dir / "benchmark"
+    benchmark_dir.mkdir(parents=True, exist_ok=True)
+
+    tau_range = np.arange(
+        cfg.threshold_range_min,
+        cfg.threshold_range_max + cfg.threshold_step / 2.0,
+        cfg.threshold_step,
+    )
+
+    cfg_hash = config_hash(cfg)
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    rows: list[dict[str, Any]] = []
+    test_probs_by_model: dict[str, np.ndarray] = {}
+    preds_by_model: dict[str, np.ndarray] = {}
+
+    for name in cfg.models:
+        spec = models.get_model(name)
+        model_dir = benchmark_dir / name
+        model_dir.mkdir(parents=True, exist_ok=True)
+
+        t0 = time.perf_counter()
+        try:
+            result = spec.train(cfg, X_tr, y_tr, X_va, y_va, X_te, y_te)
+            elapsed = time.perf_counter() - t0
+
+            np.save(model_dir / "val_probs.npy", np.asarray(result["val_probs"]))
+            if result.get("test_probs") is not None:
+                np.save(model_dir / "test_probs.npy", np.asarray(result["test_probs"]))
+            with open(model_dir / "history.json", "w", encoding="utf-8") as f:
+                json.dump(result.get("history", {}), f, indent=2)
+
+            n_params = result.get("n_params")
+            if n_params is None:
+                n_params = spec.param_count(cfg)
+
+            meta = {
+                "model": name,
+                "kind": spec.kind,
+                "n_params": n_params,
+                "epochs_trained": result.get("epochs_trained"),
+                "config_hash": cfg_hash,
+                "timestamp": timestamp,
+            }
+            with open(model_dir / "meta.json", "w", encoding="utf-8") as f:
+                json.dump(meta, f, indent=2, default=str)
+
+            print(f"  [benchmark] {name}: trained in {elapsed:.2f}s")
+
+            # Validation-only threshold, then test metrics at that tau (locked
+            # anti-data-leakage protocol — the test set is never scanned).
+            val_probs = np.asarray(result["val_probs"], dtype=np.float64)
+            test_probs = result.get("test_probs")
+            if test_probs is None:
+                test_probs = val_probs
+            test_probs = np.asarray(test_probs, dtype=np.float64)
+
+            best_tau = find_best_threshold(val_probs, y_va, tau_range)
+            val_metrics = compute_all_metrics(val_probs, y_va, best_tau)
+            test_metrics = compute_all_metrics(test_probs, y_te, best_tau)
+
+            test_probs_by_model[name] = test_probs
+            preds_by_model[name] = (test_probs > best_tau).astype(int)
+
+            rows.append({
+                "model": name,
+                "kind": spec.kind,
+                "n_params": n_params,
+                "val_auc": val_metrics["roc_auc"],
+                "test_auc": test_metrics["roc_auc"],
+                "best_tau": best_tau,
+                "test_accuracy": test_metrics["accuracy"],
+                "test_bal_acc": test_metrics["balanced_accuracy"],
+                "test_sensitivity": test_metrics["recall"],
+                "test_specificity": test_metrics["specificity"],
+                "test_f1": test_metrics["f1"],
+                "epochs_trained": result.get("epochs_trained"),
+                "training_time_s": elapsed,
+                "error": "",
+            })
+        except RuntimeError as exc:
+            warnings.warn(
+                f"benchmark: {name} failed: {exc}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            print(f"  ⚠ benchmark: {name}: error: {exc}")
+            rows.append({
+                "model": name,
+                "kind": spec.kind,
+                "n_params": "",
+                "val_auc": "",
+                "test_auc": "",
+                "best_tau": "",
+                "test_accuracy": "",
+                "test_bal_acc": "",
+                "test_sensitivity": "",
+                "test_specificity": "",
+                "test_f1": "",
+                "epochs_trained": "",
+                "training_time_s": "",
+                "error": str(exc),
+            })
+
+    # --- benchmark_comparison.csv ---
+    columns = [
+        "model", "kind", "n_params", "val_auc", "test_auc", "best_tau",
+        "test_accuracy", "test_bal_acc", "test_sensitivity", "test_specificity",
+        "test_f1", "epochs_trained", "training_time_s", "error",
+    ]
+    csv_path = results_dir / "benchmark_comparison.csv"
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=columns)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({k: _round4(v) for k, v in row.items()})
+
+    # --- benchmark_mcnemar.csv (each model vs vqc, own best_tau on test) ---
+    mcnemar_columns = ["model_a", "model_b", "p_value", "stat", "method", "mcnemar_note"]
+    mcnemar_path = results_dir / "benchmark_mcnemar.csv"
+    note = ("predictions binarized at each model's own best_tau applied to "
+            "the test set (validation-only threshold protocol)")
+    try:
+        with open(mcnemar_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=mcnemar_columns)
+            writer.writeheader()
+            if "vqc" in preds_by_model:
+                for name in preds_by_model:
+                    if name == "vqc":
+                        continue
+                    p_value, stat, method = _benchmark_mcnemar(
+                        preds_by_model[name], preds_by_model["vqc"], y_te
+                    )
+                    writer.writerow({
+                        "model_a": name,
+                        "model_b": "vqc",
+                        "p_value": round(p_value, 4),
+                        "stat": "" if stat is None else round(stat, 4),
+                        "method": method,
+                        "mcnemar_note": note,
+                    })
+    except RuntimeError as exc:
+        warnings.warn(
+            f"benchmark: McNemar test failed: {exc}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        print(f"  ⚠ benchmark: McNemar test failed: {exc}")
+
+    # --- benchmark meta (config_hash for cache validation) ---
+    meta_path = results_dir / "benchmark_meta.json"
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump({
+            "config_hash": cfg_hash,
+            "git_sha": _git_sha(),
+            "timestamp": timestamp,
+            "models": list(cfg.models),
+        }, f, indent=2)
+
+    # --- figures ---
+    figures_dir = Path(cfg.figures_dir)
+    try:
+        plot_multi_roc(
+            y_te,
+            test_probs_by_model,
+            figures_dir / "benchmark_roc.png",
+            "Benchmark ROC Curves",
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"  ⚠ benchmark: ROC plot failed: {exc}")
+
+    try:
+        _plot_benchmark_auc_bar(rows, figures_dir / "benchmark_auc_bar.png")
+    except Exception as exc:  # noqa: BLE001
+        print(f"  ⚠ benchmark: AUC bar plot failed: {exc}")
+
+    print(f"  ✓ benchmark: {len(rows)} models → {csv_path}")
+
+
+# ---------------------------------------------------------------------------
 # Unified dispatch
 # ---------------------------------------------------------------------------
 
@@ -719,6 +1155,7 @@ _STAGE_DISPATCH: dict[str, Any] = {
     "evaluate": _run_evaluate,
     "qpu": _run_qpu,
     "analysis": _run_analysis,
+    "benchmark": _run_benchmark,
 }
 
 
@@ -769,13 +1206,14 @@ def _run_all(cfg: Config, key: dict[str, str], dry_run: bool = False) -> None:
 
     ``qpu`` failures are tolerated (logged and skipped) because hardware
     access is best-effort. All other stage failures are re-raised.
+    ``benchmark`` is a standalone stage and is excluded from ``all``.
 
     Args:
         cfg: Current configuration.
         key: Cache key from :func:`build_cache_key`.
         dry_run: When ``True``, print only and do not execute.
     """
-    all_stages = [s for s in STAGES if s != "all"]
+    all_stages = [s for s in STAGES if s not in ("all", "benchmark")]
 
     for stage in all_stages:
         try:
