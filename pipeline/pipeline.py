@@ -761,7 +761,8 @@ def _run_qpu(cfg: Config, dry_run: bool = False) -> None:
 
 
 def _run_analysis(cfg: Config, dry_run: bool = False) -> None:
-    """Dispatch the ``analysis`` stage: t-SNE, calibration, SOTA, 5-fold CV."""
+    """Dispatch the ``analysis`` stage: t-SNE, calibration, SOTA, 5-fold CV,
+    DANN validation and dataset-shift ablation."""
     if dry_run:
         print(f"  → analysis: would run interpretability + CV → {_STAGE_ARTIFACTS['analysis']}")
         return
@@ -803,6 +804,34 @@ def _run_analysis(cfg: Config, dry_run: bool = False) -> None:
             print(f"  ✓ analysis: calibration Brier={brier_result['brier_score']:.4f}")
         except Exception as exc:  # noqa: BLE001
             print(f"  ⚠ analysis: calibration curve failed: {exc}")
+
+    # DANN domain discriminator validation.
+    try:
+        from pipeline.analysis import run_dann_validation
+
+        dann_result = run_dann_validation(cfg)
+        if dann_result is not None:
+            pre_dann = dann_result.get("pre_dann", {}).get("acc_mean", "N/A")
+            post_dann = dann_result.get("post_dann", {}).get("acc_mean", "N/A")
+            print(f"  ✓ analysis: DANN discriminator — pre={pre_dann:.3f}, post={post_dann:.3f}")
+        else:
+            print("  ⚠ analysis: DANN validation skipped (no raw features)")
+    except Exception as exc:  # noqa: BLE001
+        print(f"  ⚠ analysis: DANN validation failed: {exc}")
+
+    # Dataset-shift ablation (requires cfg.ablation_compare_dir).
+    try:
+        from pipeline.analysis import ablation_shift
+
+        ablation_result = ablation_shift(cfg)
+        if ablation_result is not None:
+            rows = ablation_result.get("rows", [])
+            print(f"  ✓ analysis: shift ablation — {len(rows)} rows written to "
+                  f"results/ablation_shift.csv")
+        else:
+            print("  ⚠ analysis: shift ablation skipped (ablation_compare_dir empty)")
+    except Exception as exc:  # noqa: BLE001
+        print(f"  ⚠ analysis: shift ablation failed: {exc}")
 
     # SOTA comparison table.
     try:
