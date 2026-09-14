@@ -26,6 +26,13 @@ class Config:
     Every field corresponds to a top-level key in ``configs/default.yaml``.
     Defaults match the YAML values so that ``Config()`` produces a
     configuration identical to ``load_config("configs/default.yaml")``.
+
+    Model-registry fields (``models`` / ``cv_models``) select which models
+    the benchmark stage trains; the classical-baseline fields (``logreg_C``,
+    ``svm_C``, ``svm_gamma``, ``rf_n_estimators``, ``rf_max_depth``,
+    ``knn_k``) and ``mlp_deep_hidden`` configure the sklearn / deep-MLP
+    baselines; ``vqc_encoding`` / ``vqc_ansatz`` select the quantum circuit
+    family; ``qk_n_train`` / ``qk_shots`` configure the quantum kernel.
     """
 
     # Project
@@ -69,6 +76,8 @@ class Config:
     use_learnable_scale: bool = True
     use_measurement_basis: bool = True
     diff_method: str = "adjoint"
+    vqc_encoding: str = "amplitude"  # "amplitude" | "angle" | "he"
+    vqc_ansatz: str = "reupload"     # "reupload" | "he"
 
     # Training
     batch_size: int = 16
@@ -86,6 +95,17 @@ class Config:
     mlp_hidden: int = 32
     mlp_dropout: float = 0.3
 
+    # Deep MLP baseline
+    mlp_deep_hidden: list[int] = field(default_factory=lambda: [64, 32])
+
+    # Classical baselines (sklearn)
+    logreg_C: float = 1.0
+    svm_C: float = 1.0
+    svm_gamma: str = "scale"
+    rf_n_estimators: int = 200
+    rf_max_depth: int | None = None
+    knn_k: int = 5
+
     # QPU
     run_mode: str = "sim"
     ibm_token: str = ""
@@ -96,6 +116,10 @@ class Config:
     # ZNE
     zne_scale_factors: list[int] = field(default_factory=lambda: [1, 2, 3])
 
+    # Quantum kernel
+    qk_n_train: int = 400
+    qk_shots: int = 1024
+
     # Evaluation
     threshold_range_min: float = 0.30
     threshold_range_max: float = 0.80
@@ -104,6 +128,19 @@ class Config:
 
     # Cross-validation
     cv_folds: int = 5
+
+    # Model registry (benchmark stage)
+    models: list[str] = field(default_factory=lambda: ["vqc", "mlp"])
+    cv_models: list[str] = field(default_factory=lambda: ["vqc", "mlp"])
+
+    # Class balancing
+    class_balance: str = "none"  # "none" | "undersample"
+
+    # Feature saving
+    save_raw_features: bool = True
+
+    # Ablation comparison
+    ablation_compare_dir: str = ""
 
     # Paths
     artifacts_dir: str = "artifacts"
@@ -142,8 +179,52 @@ class Config:
         return None
 
 
-def _coerce_value(raw: str) -> Any:
-    """Parse *raw* as int, float, bool (case-insensitive), else keep str."""
+def _field_type(field_name: str) -> Any:
+    """Return the declared type annotation of a Config field (may be a string)."""
+    for f in fields(Config):
+        if f.name == field_name:
+            return f.type
+    return None
+
+
+def _list_element_type(target_type: Any) -> str | None:
+    """Return the element type name of a ``list[...]`` annotation, else None."""
+    t = str(target_type)
+    if t.startswith("list["):
+        return t[5:-1].strip()
+    return None
+
+
+def _parse_list(raw: str, target_type: Any) -> list:
+    """Parse a comma-separated or bracketed list literal into a Python list.
+
+    ``"vqc,mlp,rbf_svm"`` → ``["vqc", "mlp", "rbf_svm"]``
+    ``"[64, 32]"`` → ``[64, 32]``
+
+    Args:
+        raw: Raw override string.
+        target_type: Declared Config field type (e.g. ``"list[str]"``).
+
+    Returns:
+        A list with elements coerced to the declared element type.
+    """
+    s = raw.strip()
+    if s.startswith("[") and s.endswith("]"):
+        s = s[1:-1]
+    parts = [p.strip() for p in s.split(",")] if s.strip() else []
+    if _list_element_type(target_type) == "int":
+        return [_coerce_value(p) for p in parts]
+    return parts
+
+
+def _coerce_value(raw: str, target_type: Any = None) -> Any:
+    """Parse *raw* as int, float, bool (case-insensitive), else keep str.
+
+    When *target_type* is a ``list[...]`` annotation, parse comma-separated
+    or bracketed values into a list instead (see :func:`_parse_list`).
+    """
+    if _list_element_type(target_type) is not None:
+        return _parse_list(raw, target_type)
     try:
         return int(raw)
     except ValueError:
@@ -220,7 +301,7 @@ def load_config(
         for key, value in overrides.items():
             field_name = _resolve_field_name(key)
             if isinstance(value, str):
-                value = _coerce_value(value)
+                value = _coerce_value(value, _field_type(field_name))
             cfg_dict[field_name] = value
 
     known = {f.name for f in fields(Config)}
@@ -261,7 +342,7 @@ def apply_cli_overrides(cfg: Config, overrides: dict[str, str]) -> Config:
     d = config_to_dict(cfg)
     for key, value in overrides.items():
         field_name = _resolve_field_name(key)
-        d[field_name] = _coerce_value(value)
+        d[field_name] = _coerce_value(value, _field_type(field_name))
     known = {f.name for f in fields(Config)}
     filtered = {k: v for k, v in d.items() if k in known}
     return Config(**filtered)

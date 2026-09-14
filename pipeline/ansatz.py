@@ -230,6 +230,233 @@ def build_vqc_circuit(
     return circuit
 
 
+# ---------------------------------------------------------------------------
+# Angle-encoding ansatz
+# ---------------------------------------------------------------------------
+
+
+def count_params_angle(
+    n_qubits: int = 6,
+    n_layers: int = 3,
+    use_scale: bool = True,
+    use_meas_basis: bool = True,
+) -> int:
+    """Number of trainable parameters of the angle-encoding VQC ansatz.
+
+    Formula: ``3 * n_layers * n_qubits`` (Euler angles of the ``Rot`` gates)
+    plus ``n_layers * n_qubits`` (per-layer trainable RY re-upload angles)
+    plus ``n_qubits`` when the learnable input scale is enabled plus ``2``
+    when the trainable measurement basis is enabled.  80 for the default
+    flags.
+
+    Pure arithmetic — no PennyLane required.
+
+    Args:
+        n_qubits: Number of qubits (default 6).
+        n_layers: Number of data re-uploading layers (default 3).
+        use_scale: Include the ``n_qubits`` learnable input scale parameters.
+        use_meas_basis: Include the 2 trainable measurement-basis parameters.
+
+    Returns:
+        Total number of trainable parameters.
+    """
+    n_rot = n_layers * n_qubits * 3
+    n_angle = n_layers * n_qubits
+    n_scale = n_qubits if use_scale else 0
+    n_meas = 2 if use_meas_basis else 0
+    return n_rot + n_angle + n_scale + n_meas
+
+
+def build_vqc_circuit_angle(
+    n_qubits: int = 6,
+    n_layers: int = 3,
+    use_scale: bool = True,
+    use_meas_basis: bool = True,
+    device=None,
+    diff_method: str | None = None,
+):
+    """Build the angle-encoding VQC QNode.
+
+    Circuit structure (LOCKED)::
+
+        for l in range(n_layers):
+            for q in range(n_qubits):
+                RY(angle[l,q] + scale[q] * features[q] * pi, q)   # trainable angle re-upload
+            for q in range(n_qubits):
+                Rot(rot[l,q,0], rot[l,q,1], rot[l,q,2], q)
+            for q in range(n_qubits):
+                CNOT(q, (q + 1) % n_qubits)             # ring entangler
+        if use_meas_basis:
+            RY(meas[0], 0); RZ(meas[1], 0)
+        return expval(PauliZ(0))
+
+    Unlike :func:`build_vqc_circuit` (amplitude embedding), the input is
+    encoded via per-layer RY rotations of the first ``n_qubits`` features.
+    Each layer has its own trainable angle offset ``angle[l, q]``; the
+    optional learnable scale multiplies the data contribution.
+
+    Trainable parameters are passed as a single flat tensor of shape
+    ``(count_params_angle(...),)`` with layout::
+
+        [rot (n_layers*n_qubits*3), angle (n_layers*n_qubits),
+         scale (n_qubits,), meas (2,)]
+
+    Args:
+        n_qubits: Number of qubits (default 6).
+        n_layers: Number of data re-uploading layers (default 3).
+        use_scale: Include the learnable input scale parameters.
+        use_meas_basis: Include the trainable measurement basis.
+        device: ``None`` (auto-resolve), a device name string,
+            or an existing ``qml.Device`` instance.
+        diff_method: Requested differentiation method (``None`` = auto).
+
+    Returns:
+        A ``qml.QNode`` callable as ``circuit(params, features)`` returning
+        ``⟨Z₀⟩ ∈ [-1, 1]``.
+    """
+    import numpy as np
+    import pennylane as qml
+
+    dev, diff_method = _resolve_device(n_qubits, device=device, diff_method=diff_method)
+
+    n_rot = n_layers * n_qubits * 3
+    n_angle = n_layers * n_qubits
+    n_scale = n_qubits if use_scale else 0
+    n_meas = 2 if use_meas_basis else 0
+
+    @qml.qnode(dev, diff_method=diff_method)
+    def circuit(params, features):
+        rot = params[:n_rot].reshape((n_layers, n_qubits, 3))
+        angle = params[n_rot : n_rot + n_angle].reshape((n_layers, n_qubits))
+        scale = params[n_rot + n_angle : n_rot + n_angle + n_scale] if use_scale else None
+        meas = params[n_rot + n_angle + n_scale :] if use_meas_basis else None
+
+        for l in range(n_layers):
+            for q in range(n_qubits):
+                if use_scale:
+                    qml.RY(angle[l, q] + scale[q] * features[q] * np.pi, wires=q)
+                else:
+                    qml.RY(angle[l, q] + features[q] * np.pi, wires=q)
+            for q in range(n_qubits):
+                qml.Rot(rot[l, q, 0], rot[l, q, 1], rot[l, q, 2], wires=q)
+            for q in range(n_qubits):
+                qml.CNOT(wires=[q, (q + 1) % n_qubits])
+
+        if use_meas_basis:
+            qml.RY(meas[0], wires=0)
+            qml.RZ(meas[1], wires=0)
+
+        return qml.expval(qml.PauliZ(0))
+
+    return circuit
+
+
+# ---------------------------------------------------------------------------
+# Hardware-efficient ansatz
+# ---------------------------------------------------------------------------
+
+
+def count_params_he(
+    n_qubits: int = 6,
+    n_layers: int = 3,
+    use_meas_basis: bool = True,
+) -> int:
+    """Number of trainable parameters of the hardware-efficient ansatz.
+
+    Formula: ``2 * n_layers * n_qubits`` (RY/RZ rotations per qubit per
+    layer) plus ``2`` when the trainable measurement basis is enabled.
+    38 for the default flags.
+
+    Pure arithmetic — no PennyLane required.
+
+    Args:
+        n_qubits: Number of qubits (default 6).
+        n_layers: Number of ansatz layers (default 3).
+        use_meas_basis: Include the 2 trainable measurement-basis parameters.
+
+    Returns:
+        Total number of trainable parameters.
+    """
+    n_rot = n_layers * n_qubits * 2
+    n_meas = 2 if use_meas_basis else 0
+    return n_rot + n_meas
+
+
+def build_vqc_circuit_he(
+    n_qubits: int = 6,
+    n_layers: int = 3,
+    use_meas_basis: bool = True,
+    device=None,
+    diff_method: str | None = None,
+):
+    """Build the hardware-efficient ansatz (HEA) VQC QNode.
+
+    Circuit structure (LOCKED)::
+
+        for q in range(n_qubits):
+            RY(features[q] * pi, q)                     # angle embedding (data)
+        for l in range(n_layers):
+            for q in range(n_qubits):
+                RY(rot[l,q,0], q); RZ(rot[l,q,1], q)    # trainable single-qubit rotations
+            for q in range(n_qubits):
+                CNOT(q, (q + 1) % n_qubits)             # ring entangler
+        if use_meas_basis:
+            RY(meas[0], 0); RZ(meas[1], 0)
+        return expval(PauliZ(0))
+
+    The input is angle-embedded once via ``RY(features[q] * pi)``; the
+    trainable part is a hardware-efficient stack of single-qubit RY/RZ
+    rotations interleaved with nearest-neighbour CNOT entanglers.
+
+    Trainable parameters are passed as a single flat tensor of shape
+    ``(count_params_he(...),)`` with layout::
+
+        [rot (n_layers*n_qubits*2), meas (2,)]
+
+    Args:
+        n_qubits: Number of qubits (default 6).
+        n_layers: Number of ansatz layers (default 3).
+        use_meas_basis: Include the trainable measurement basis.
+        device: ``None`` (auto-resolve), a device name string,
+            or an existing ``qml.Device`` instance.
+        diff_method: Requested differentiation method (``None`` = auto).
+
+    Returns:
+        A ``qml.QNode`` callable as ``circuit(params, features)`` returning
+        ``⟨Z₀⟩ ∈ [-1, 1]``.
+    """
+    import numpy as np
+    import pennylane as qml
+
+    dev, diff_method = _resolve_device(n_qubits, device=device, diff_method=diff_method)
+
+    n_rot = n_layers * n_qubits * 2
+    n_meas = 2 if use_meas_basis else 0
+
+    @qml.qnode(dev, diff_method=diff_method)
+    def circuit(params, features):
+        rot = params[:n_rot].reshape((n_layers, n_qubits, 2))
+        meas = params[n_rot:] if use_meas_basis else None
+
+        for q in range(n_qubits):
+            qml.RY(features[q] * np.pi, wires=q)
+
+        for l in range(n_layers):
+            for q in range(n_qubits):
+                qml.RY(rot[l, q, 0], wires=q)
+                qml.RZ(rot[l, q, 1], wires=q)
+            for q in range(n_qubits):
+                qml.CNOT(wires=[q, (q + 1) % n_qubits])
+
+        if use_meas_basis:
+            qml.RY(meas[0], wires=0)
+            qml.RZ(meas[1], wires=0)
+
+        return qml.expval(qml.PauliZ(0))
+
+    return circuit
+
+
 def _core_ansatz_circuit(n_qubits: int, n_layers: int):
     """Build the core ansatz QNode (rot params only) returning the full state.
 
@@ -412,7 +639,11 @@ def entanglement_capability(
 __all__ = [
     "SEED",
     "build_vqc_circuit",
+    "build_vqc_circuit_angle",
+    "build_vqc_circuit_he",
     "count_params",
+    "count_params_angle",
+    "count_params_he",
     "split_params",
     "expressibility_sweep",
     "entanglement_capability",
