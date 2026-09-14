@@ -53,10 +53,10 @@ The full pipeline consists of five stages:
    - The 64‑dimensional vectors are L2‑normalized to satisfy amplitude encoding constraints.
 
 5. **Quantum classifier (VQC) with data re‑uploading**  
-   - The 64 autoencoder features are **amplitude‑encoded** via `qml.AmplitudeEmbedding` into a **6‑qubit** state.
-   - A **data re‑uploading ansatz** with $L=3$ layers re‑encodes input data in each layer for increased expressivity.
-   - Each layer: AngleEmbedding → Rot($\phi,\theta,\omega$) → Ring CNOT entanglers.
-   - Total **62 trainable parameters** — 54 rotation angles (3 layers × 6 qubits × 3 Euler angles) + 6 learnable scale parameters for amplitude encoding + 2 measurement-basis parameters (RY + RZ).
+   - The 64 autoencoder features are **amplitude‑encoded once** via `qml.AmplitudeEmbedding` into a **6‑qubit** state (all 64 components enter the circuit this way).
+   - A **data re‑uploading ansatz** with $L=3$ layers re‑encodes part of the input in each layer: every qubit $q$ applies `RY(scale_q · x_q · π)`, re‑uploading latent component $x_q$ with a learnable scale. Only the **first 6 of the 64 components** take this per‑layer re‑uploading path; the remaining 58 components reach the circuit exclusively through the single amplitude embedding (an honest limitation of the 6‑qubit re‑uploading budget, see §8.1).
+   - Each layer: RY data re‑upload → Rot($\phi,\theta,\omega$) → Ring CNOT entanglers.
+   - Total **62 trainable parameters** — 54 rotation angles (3 layers × 6 qubits × 3 Euler angles) + 6 learnable scale parameters for the RY data re‑uploading + 2 measurement-basis parameters (RY + RZ).
    - Expressivity analysis: KL divergence vs. Haar measure confirms $L=3$ is optimal.
    - The model measures a single Pauli‑Z expectation value and maps it to a probability of pneumonia: `p = (1 + ⟨Z₀⟩) / 2`.
    - Gradient computation uses the **adjoint** differentiation method (~100× faster than parameter‑shift on `lightning.qubit`).

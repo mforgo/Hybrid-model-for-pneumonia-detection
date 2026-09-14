@@ -60,6 +60,34 @@ backend = service.least_busy(operational=True, simulator=False, min_num_qubits=6
 
 Prefers **Heron r2** processors (`ibm_kingston` 156 qubits). Retired backends (`ibm_brisbane`, `ibm_sherbrooke`) are automatically excluded.
 
+## NISQ state-preparation bottleneck
+
+The amplitude encoding of a 64-dimensional real vector into 6 qubits dominates the hardware circuit cost — it is *not* the trainable ansatz:
+
+| Circuit block | 2-qubit gates | Notes |
+|---|---|---|
+| `AmplitudeEmbedding` (state prep) | **62 CNOTs** | PennyLane's Möttönen decomposition for a *real-valued* state: $2^6 - 2 = 62$ (Y-cascade only; the Z-cascade for complex states adds another 62 → 124 total). The general complex-state bound of Shende–Bullock–Markov is $2^{n+1} - 2n = 116$ at $n=6$; the leading-order Iten et al. bound is $\approx 23/24 \cdot 2^n \approx 61$. |
+| Trainable ansatz (3 layers) | 18 CNOTs | 3 layers × 6 ring-CNOTs (qubit $w \to w{+}1 \bmod 6$). |
+| Measurement basis | 0 | local RY + RZ on qubit 0. |
+| **Total** | **80 CNOTs** | encoding is **≈ 3.4× deeper than the classifier**. |
+
+**Why this matters on hardware:**
+
+- The 62 state-prep CNOTs are *fixed* (non-trainable) — noise in them corrupts every sample identically, and ZNE cannot "train them away" like ansatz angles.
+- After transpilation to the IBM native gate set (`ECR`, `RZ`, `SX`, `X`) with connectivity routing, the actual 2-qubit-gate count is *at least* 80 (typically higher due to SWAP insertion on the 6-qubit coupling map).
+- Expected hierarchy on a real device: state-preparation noise ≫ ansatz noise. The measured hardware accuracy drop vs. the ideal simulator is therefore primarily attributable to encoding, not to the learned classifier — an explicit limitation to report in the thesis (Section 6.x, "NISQ state-preparation bottleneck").
+
+**Mitigation posture:**
+
+- ZNE *does* fold through state-prep gates (gate folding is applied to the whole compiled circuit), so the `zne_prob` column of `zne_comparison.csv` captures encoding noise too. Caveat: at scale factor 3 the ~80-gate circuit becomes ~240 gates, stretching coherence budgets, and the 62 state-prep CNOTs alone become ~186.
+- Mitiq has **no built-in "skip state prep" option** — excluding the encoding block (e.g., to isolate ansatz noise) requires a custom `scale_noise` function. Per-gate fidelity weights (`fidelities={"single": 1.0}`) only skip single-qubit gates, not CNOTs.
+- Do **not** silently drop `run_mode=sim` comparison: the sim-vs-hardware gap IS the state-prep bottleneck quantification.
+- For future work: consider structure-preserving approximate encoding (e.g., reduced-amplitude or variational state preparation) or re-uploading-style angle encoding to cut the 62-CNOT fixed overhead — both trade expressibility for shallower circuits.
+
+**Differentiability caveat:** PennyLane skips the Z-cascade only when the state is real-typed *and* non-differentiable. Training with `requires_grad=True` features would emit 124 CNOTs instead of 62. Frozen `.npy` features (as in this pipeline) avoid this, but it matters if encoding is ever made end-to-end differentiable.
+
+**References:** M. Möttönen et al., *Transformation of quantum states using uniformly controlled rotations*, Quantum Inf. Comput. 5(6):467 (2005), quant-ph/0407010; V. Shende, S. Bullock, I. Markov, *Synthesis of quantum logic circuits*, IEEE TCAD 25(6):1000 (2006), quant-ph/0406176; R. Iten et al., *Quantum circuits for isometries*, Phys. Rev. A 93, 032318 (2016), arXiv:1501.06911 (used by Qiskit `StatePreparation`).
+
 ## Execution flow
 
 ```

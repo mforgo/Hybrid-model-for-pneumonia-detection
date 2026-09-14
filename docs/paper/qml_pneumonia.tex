@@ -58,12 +58,12 @@ barren-plateau phenomenon that limits the trainability of deep parametrized
 circuits together with its principal mitigation strategies.  As a concrete
 illustration, we describe and analyze a hybrid pipeline that couples a frozen
 ConvNeXt-Tiny feature extractor with nonlinear autoencoder dimensionality
-reduction (768$\rightarrow$64) and a 6-qubit, 54-parameter data re-uploading
+reduction (768$\rightarrow$64) and a 6-qubit, 62-parameter data re-uploading
 VQC classifier, evaluated on a publicly available pediatric CXR dataset under
 an explicit train/test class-prevalence shift.  The hybrid model attains a
 test AUC-ROC of 0.860 (versus 0.940 for a classical multilayer perceptron
-trained on identical features) while using approximately $39\times$ fewer
-trainable parameters in its decision layer (54 versus 2{,}113).  We situate
+trained on identical features) while using approximately $34\times$ fewer
+trainable parameters in its decision layer (62 versus 2{,}113).  We situate
 this case study within a broader survey of
 related hybrid approaches for respiratory and cardiac CXR analysis reported
 in the literature, and ground a discussion of the algorithmic trade-offs,
@@ -432,8 +432,10 @@ $(w+1) \bmod n$.  For $n$ qubits and $L$ layers, this yields
   P_{\text{VQC}} = 3\, n\, L
   \label{eq:vqc_params}
 \end{equation}
-trainable parameters---e.g., $3 \times 6 \times 3 = 54$ parameters for a
-6-qubit, 3-layer circuit, versus the $2{,}113$ parameters of a
+trainable parameters---e.g., $3 \times 6 \times 3 = 54$ rotation parameters
+for a 6-qubit, 3-layer circuit, plus 6 learnable input-scaling parameters
+and a 2-parameter measurement basis, yielding the 62 parameters of the
+case-study VQC---versus the $2{,}113$ parameters of a
 comparable classical dense head (Equation~\ref{eq:mlp_params}).  Gradients
 of $f(x,\theta)$ with respect to $\theta$ can be computed on real hardware
 via the parameter-shift rule, or, in simulation, via reverse-mode automatic
@@ -632,7 +634,7 @@ Rao et al.~\cite{rao2024} & HQC-VQC ($\dagger$) & COVID-19 Radiography Dataset (
 Decoodt et al.~\cite{decoodt2023} & HQC-VQC & CheXpert (2.4K PA) & Cardiomegaly & AUC $\leq 0.93$; improved Grad-CAM++ localization \\
 Sharma~\cite{sharmaR2023hybrid} & HQC-Conv & Custom CXR & Pneumonia & ZFNet + quantum layer hybrid \\
 Khatoniar et al.~\cite{khatoniar2024} & QCNN & CXR (Guangzhou) & Pneumonia & Robustness analysis under extreme feature reduction \\
-\textbf{This work} & HQC-VQC & CXR (Guangzhou, 5.8K) & Pneumonia & AUC 0.860 (VQC) vs.\ 0.940 (MLP); $39\times$ param.\ reduction \\
+\textbf{This work} & HQC-VQC & CXR (Guangzhou, 5.8K) & Pneumonia & AUC 0.860 (VQC) vs.\ 0.940 (MLP); $34\times$ param.\ reduction \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -670,10 +672,18 @@ training and test distributions (Section~\ref{sec:relwork}); (3)~a
 nonlinear autoencoder, fitted on the training embeddings, reduces this
 embedding to 64 dimensions, chosen to match the Hilbert-space dimension of a
 6-qubit register ($2^6 = 64$); and (4)~a
-6-qubit, 3-layer VQC, using amplitude encoding
-(Equation~\ref{eq:amplitude}) and the rotation-plus-ring-CNOT ansatz of
-Section~\ref{sec:vqc}, produces a scalar pneumonia score via
-Equations~\ref{eq:vqc}--\ref{eq:sigmoid_remap}.
+6-qubit, 3-layer VQC produces a scalar pneumonia score via
+Equations~\ref{eq:vqc}--\ref{eq:sigmoid_remap}.  The circuit
+\emph{amplitude-encodes} the 64-dimensional latent vector once
+(Equation~\ref{eq:amplitude}), then applies $L=3$ data re-uploading
+layers, each consisting of scaled single-qubit rotations
+$R_y(\mathrm{scale}_q \cdot x_q \cdot \pi)$ that re-upload only the first
+six latent components $x_0,\dots,x_5$ (the re-uploading budget of a
+6-qubit register), the general rotation
+$\mathrm{Rot}(\phi,\theta,\omega)$ of Section~\ref{sec:vqc}, and a ring of
+CNOT entanglers.  The remaining 58 latent dimensions reach the classifier
+exclusively through the single amplitude embedding; this explicit trade-off
+is revisited in Section~\ref{sec:limitations}.
 
 \begin{table}[htbp]
 \centering
@@ -686,7 +696,7 @@ Stage & Input & Operation & Output & Parameters \\
 Feature extraction & $224\times224$ image & ConvNeXt-Tiny (frozen) & 768-D vector & 0 (fixed) \\
 Domain adaptation & 768-D & DANN + GRL & 768-D vector & 0 (fixed) \\
 Dimensionality reduction & 768-D & Autoencoder (nonlinear) & 64-D vector & 0 (fixed) \\
-Quantum classification & 64-D & VQC $U(\theta)$ & score $\in [0,1]$ & 54 \\
+Quantum classification & 64-D & VQC $U(\theta)$ & score $\in [0,1]$ & 62 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -824,8 +834,8 @@ AUC-ROC (test)        & 0.940   & 0.860  \\
 Balanced accuracy     & 0.7679  & 0.7509 \\
 \addlinespace
 Decision threshold $\tau$ & 0.30 & 0.35 \\
-Decision-layer parameters & 2{,}113 & 54 \\
-Parameter reduction       & \multicolumn{2}{c}{$\approx 39\times$} \\
+Decision-layer parameters & 2{,}113 & 62 \\
+Parameter reduction       & \multicolumn{2}{c}{$\approx 34\times$} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -838,7 +848,7 @@ modest---the accuracy difference is 1.28 percentage points and is not
 statistically significant at $\alpha=0.05$ under McNemar's test applied to
 the 624 paired test predictions---so the hybrid model attains essentially
 comparable discriminative performance (test AUC-ROC 0.860) using
-approximately $39\times$ fewer decision-layer parameters (54 versus 2{,}113).
+approximately $34\times$ fewer decision-layer parameters (62 versus 2{,}113).
 Both models exhibit a ``cautious screening'' operating profile, with very
 high sensitivity (99.74\%) at the cost of low specificity (50.4--53.9\%),
 which from a purely metric standpoint favors minimizing missed pneumonia
@@ -998,7 +1008,13 @@ in Section~\ref{sec:hybrid}.
     achieves exponential qubit compression but, in the general case, incurs
     exponential state-preparation circuit depth \cite{aaronson2015};
     simulator-based studies typically do not account for this cost, which will
-    materially affect feasibility on physical hardware.
+    materially affect feasibility on physical hardware.  Quantitatively, the
+    case-study encoding of a real-valued 64-dimensional vector into six qubits
+    requires $2^6 - 2 = 62$ CNOT gates under the standard M\"ott\"onen
+    decomposition \cite{mottonen2005}---against only $18$ CNOTs (3 layers
+    $\times$ 6 qubits) in the entire trainable ansatz---so state preparation
+    alone accounts for roughly 78\% of the circuit's 2-qubit gates and is
+    expected to dominate the hardware error budget on real devices.
   \item \textbf{Dataset shift.}  Differences in class prevalence (and, more
     broadly, in acquisition device, patient demographics, and imaging protocol)
     between training and deployment distributions are a well-documented source
@@ -1031,6 +1047,20 @@ in Section~\ref{sec:hybrid}.
     reported performance differences, while accompanied by approximate
     confidence intervals, should be interpreted with the caveats appropriate
     to a single-run evaluation.
+  \item \textbf{Potential patient-level leakage.}  The train/validation
+    re-split was performed at the \emph{image} level (stratified
+    permutation), not at the \emph{patient} level, because the public Kaggle
+    version of the dataset does not expose patient identifiers in the image
+    filenames.  As the original Mendeley collection contains multiple images
+    per patient, images of the same patient may appear in both the training
+    and validation sets, which could make validation metrics slightly
+    optimistic.  The held-out test set remains the primary honest estimate:
+    it follows the original authors' patient-disjoint train/test partition and
+    was never touched by threshold optimization.  Nonetheless, a
+    patient-grouped re-evaluation (e.g., grouped k-fold over the train+val
+    pool with patient metadata recovered from the Mendeley source) is an
+    important robustness check that should precede any deployment-oriented
+    claim.
   \item \textbf{Single-institution, narrow-demographic data.}  The underlying
     dataset originates from a single pediatric population at one medical center,
     limiting claims of generalizability to adult populations, other acquisition
@@ -1122,12 +1152,12 @@ statistically significant improvements over classical baselines
 comparison across studies.
 
 Using a ConvNeXt-Tiny/autoencoder/VQC pipeline evaluated on a public pediatric
-CXR dataset as a concrete case study, we showed that a 6-qubit, 54-parameter
+CXR dataset as a concrete case study, we showed that a 6-qubit, 62-parameter
 variational quantum classifier can achieve a level of diagnostic performance
 comparable to---though not exceeding---that of a classical MLP of comparable
 input dimensionality (test AUC-ROC 0.860 versus 0.940; accuracy 81.25\%
-versus 82.53\%), while requiring approximately $39\times$ fewer trainable
-parameters in the decision layer (54 versus 2{,}113).  This result
+versus 82.53\%), while requiring approximately $34\times$ fewer trainable
+parameters in the decision layer (62 versus 2{,}113).  This result
 should be read narrowly: it demonstrates that a compact variational circuit can
 serve as a functional, parameter-efficient classifier on a compressed
 medical-imaging representation, not that a computational or statistical quantum
@@ -1253,6 +1283,12 @@ McClean, J.~R., Boixo, S., Smelyanskiy, V.~N., Babbush, R., \& Neven, H.
 \bibitem{mitarai2018}
 Mitarai, K., Negoro, M., Kitagawa, M., \& Fujii, K. (2018). Quantum circuit
 learning. \emph{Physical Review A}, 98(3), 032309.
+
+\bibitem{mottonen2005}
+M\"ott\"onen, M., Vartiainen, J.~J., Bergholm, V., \& Salomaa, M.~M. (2005).
+Transformation of quantum states using uniformly controlled rotations.
+\emph{Quantum Information and Computation}, 5(6), 467--473.
+\url{https://arxiv.org/abs/quant-ph/0407010}
 
 \bibitem{naz2020}
 Naz, A. (2020). Literature review on X-ray based pneumonia detection using

@@ -171,14 +171,28 @@ The quantum classification layer. Receives a 64-dimensional L2-normalised featur
 ```python
 @qml.qnode(dev, diff_method="parameter-shift")
 def circuit(x, params):
+    # Encode all 64 components ONCE into the 6-qubit state
+    # (x is the L2-normalised 64-dim feature vector).
+    qml.AmplitudeEmbedding(x, wires=range(6), normalize=True, pad_with=0.0)
     for l in range(n_layers):
-        qml.AmplitudeEmbedding(x, wires=range(6), normalize=True, pad_with=0.0)
+        for w in range(6):
+            # Data re-uploading: only the first 6 components x[0..5] are
+            # re-fed per layer, scaled by learnable per-qubit scale[w].
+            qml.RY(scale[w] * x[w] * np.pi, wires=w)
         for w in range(6):
             qml.Rot(params[l, w, 0], params[l, w, 1], params[l, w, 2], wires=w)
         for w in range(6):
             qml.CNOT(wires=[w, (w + 1) % 6])
+    # Trainable measurement basis:
+    qml.RY(meas[0], wires=0); qml.RZ(meas[1], wires=0)
     return qml.expval(qml.PauliZ(0))
 ```
+
+**Note on re-uploading scope:** the full 64-dim vector enters the circuit exactly
+once via `AmplitudeEmbedding`; the per-layer `RY` re-uploading path feeds only
+the first 6 latent components. The remaining 58 components are present in the
+state but not re-uploaded — an explicit trade-off of the 6-qubit re-uploading
+budget, not an omission.
 
 **Hyperparameters:**
 | Parameter | Value |
