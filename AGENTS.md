@@ -36,7 +36,7 @@ This document defines the specialized AI agent personas contributing to the rese
 
 **Responsibilities & Context:**
 * **Ansatz Design:** Implement the data re-uploading ansatz with L=3 layers to maximize expressibility using only 6 qubits.
-* **Parameter Efficiency:** Ensure the VQC maintains exactly 54 trainable parameters to demonstrate extreme parameter efficiency compared to the classical MLP (39× fewer).
+* **Parameter Efficiency:** Ensure the VQC maintains exactly 62 trainable parameters (54 rotation angles + 6 learnable scale + 2 measurement basis) to demonstrate extreme parameter efficiency compared to the classical MLP (34× fewer).
 * **Hardware Execution:** Prepare the quantum circuits for physical execution on IBM Quantum processors, utilizing Zero-Noise Extrapolation (ZNE) to mitigate NISQ-era decoherence.
 * **Gradient Optimization:** Use PennyLane's adjoint differentiation on classical simulators for fast training, switching to parameter-shift rules only when targeting physical hardware.
 

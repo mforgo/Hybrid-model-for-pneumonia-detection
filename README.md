@@ -56,7 +56,7 @@ The full pipeline consists of five stages:
    - The 64 autoencoder features are **amplitude‑encoded** via `qml.AmplitudeEmbedding` into a **6‑qubit** state.
    - A **data re‑uploading ansatz** with $L=3$ layers re‑encodes input data in each layer for increased expressivity.
    - Each layer: AngleEmbedding → Rot($\phi,\theta,\omega$) → Ring CNOT entanglers.
-   - Total **54 trainable parameters** (3 layers × 6 qubits × 3 Euler angles).
+   - Total **62 trainable parameters** — 54 rotation angles (3 layers × 6 qubits × 3 Euler angles) + 6 learnable scale parameters for amplitude encoding + 2 measurement-basis parameters (RY + RZ).
    - Expressivity analysis: KL divergence vs. Haar measure confirms $L=3$ is optimal.
    - The model measures a single Pauli‑Z expectation value and maps it to a probability of pneumonia: `p = (1 + ⟨Z₀⟩) / 2`.
    - Gradient computation uses the **adjoint** differentiation method (~100× faster than parameter‑shift on `lightning.qubit`).
@@ -205,14 +205,14 @@ On the 624‑image test set (62.5 % pneumonia, 37.5 % normal), the following met
 | F1‑score           | 0.8771                         | 0.8693                       | −0.0078   |
 | AUC‑ROC (val)      | 0.991                          | **0.969**                    | —         |
 | AUC‑ROC (test)     | 0.940                          | 0.860                        | −0.080    |
-| Trainable params (classifier) | 2,113                | **54**                       | −2,059    |
+| Trainable params (classifier) | 2,113                | **62**                       | −2,051    |
 | Training time      | ~7 epochs (early stop)        | 7 epochs (early stop)         | —         |
 
 **Optimal thresholds** (selected on validation set using Balanced Accuracy):
 - MLP: τ = 0.30
 - VQC: τ = 0.35
 
-The hybrid model achieves **96.9 % AUC on validation** and **86.0 % AUC on test**, with **39× fewer trainable parameters** (54 vs. 2,113), which demonstrates extreme parameter efficiency in the NISQ regime.
+The hybrid model achieves **96.9 % AUC on validation** and **86.0 % AUC on test**, with **34× fewer trainable parameters** (62 vs. 2,113), which demonstrates extreme parameter efficiency in the NISQ regime.
 
 ### 7.2 Statistical evaluation
 
@@ -231,7 +231,7 @@ The data re‑uploading ansatz with L=3 was selected based on:
 - L=1,2: too "rigid" (under‑parameterized)
 - L=4+: marginal expressivity gain, higher hardware noise susceptibility
 
-This justifies the choice of **54 parameters** as the optimal balance between expressivity and NISQ feasibility.
+This justifies the choice of **62 parameters** (54 rotation + 6 scale + 2 measurement) as the optimal balance between expressivity and NISQ feasibility.
 
 ### 7.4 Behaviour and interpretation
 

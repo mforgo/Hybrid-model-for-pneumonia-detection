@@ -410,7 +410,7 @@ def sota_comparison_table() -> Any:
         "ConvNeXt-Tiny + VQC (this work)",
     ]
     aucs: list[float | None] = [0.92, 0.96, 0.94, None, None]
-    params: list[float | None] = [1_000_000, 8_000_000, 25_000_000, 2_113, 54]
+    params: list[float | None] = [1_000_000, 8_000_000, 25_000_000, 2_113, 62]
     references = [
         "Kermany et al., Cell 2018",
         "Rajpurkar et al., arXiv:1711.05225",

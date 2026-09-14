@@ -172,7 +172,7 @@
            \item \textbf{Input:} Chest X-Ray ($224 \times 224$).
            \item \textbf{Feature Extraction:} ConvNeXt-Tiny (frozen) $\rightarrow$ 768-D vector.
            \item \textbf{Compression:} PCA/Autoencoder ($768 \rightarrow 64$).
-           \item \textbf{Classification:} VQC (6 qubits, 54 params).
+           \item \textbf{Classification:} VQC (6 qubits, 62 params).
        \end{enumerate}
 
     \column{0.5\textwidth}
@@ -222,8 +222,8 @@
       \textbf{Parameter Efficiency:}
       \begin{itemize}
           \item Classical MLP: 2,113 params.
-          \item Quantum VQC: \textbf{54 params}.
-          \item \textcolor{NTCPurple}{\textbf{Reduction: 39$\times$}}[cite: 58].
+          \item Quantum VQC: \textbf{62 params}.
+          \item \textcolor{NTCPurple}{\textbf{Reduction: 34$\times$}}[cite: 58].
       \end{itemize}
       
       \column{0.5\textwidth}
