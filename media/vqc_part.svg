@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 820" width="1400" height="820">
+  <defs><style>text { font-family: Arial, Helvetica, sans-serif; }</style></defs>
+  <rect x="0" y="0" width="1400" height="820" fill="#ffffff"/>
+  <text x="700" y="55" text-anchor="middle" font-size="30" font-weight="bold" fill="#5b21b6">VQC ansatz (quantum decision layer)</text>
+  <text x="250" y="115" text-anchor="middle" font-size="16" font-weight="bold" fill="#5b21b6">AmplitudeEmbedding (64-dim L2-normalized)</text>
+  <text x="680" y="115" text-anchor="middle" font-size="18" font-weight="bold" fill="#5b21b6">Layer ℓ — data re-uploading ansatz (L=3)</text>
+  <line x1="100" y1="240" x2="1250" y2="240" stroke="#6b7280" stroke-width="2"/>
+  <line x1="100" y1="312" x2="1250" y2="312" stroke="#6b7280" stroke-width="2"/>
+  <line x1="100" y1="384" x2="1250" y2="384" stroke="#6b7280" stroke-width="2"/>
+  <line x1="100" y1="456" x2="1250" y2="456" stroke="#6b7280" stroke-width="2"/>
+  <line x1="100" y1="528" x2="1250" y2="528" stroke="#6b7280" stroke-width="2"/>
+  <line x1="100" y1="600" x2="1250" y2="600" stroke="#6b7280" stroke-width="2"/>
+  <text x="70" y="246" text-anchor="end" font-size="18" fill="#6b7280">q0</text>
+  <text x="70" y="318" text-anchor="end" font-size="18" fill="#6b7280">q1</text>
+  <text x="70" y="390" text-anchor="end" font-size="18" fill="#6b7280">q2</text>
+  <text x="70" y="462" text-anchor="end" font-size="18" fill="#6b7280">q3</text>
+  <text x="70" y="534" text-anchor="end" font-size="18" fill="#6b7280">q4</text>
+  <text x="70" y="606" text-anchor="end" font-size="18" fill="#6b7280">q5</text>
+  <rect x="120" y="210" width="260" height="420" rx="16" fill="#5b21b6"/>
+  <text x="250" y="395" text-anchor="middle" font-size="20" font-weight="bold" fill="#ffffff">AmplitudeEmbedding</text>
+  <text x="250" y="425" text-anchor="middle" font-size="13" fill="#ffffff">encodes 64-dim vector once</text>
+  <rect x="460" y="218" width="110" height="44" rx="8" fill="#5b21b6"/>
+  <text x="515" y="245" text-anchor="middle" font-size="13" fill="#ffffff">RY(s<tspan baseline-shift="sub" font-size="10">w</tspan>·x<tspan baseline-shift="sub" font-size="10">w</tspan>·π)</text>
+  <rect x="460" y="290" width="110" height="44" rx="8" fill="#5b21b6"/>
+  <text x="515" y="317" text-anchor="middle" font-size="13" fill="#ffffff">RY(s<tspan baseline-shift="sub" font-size="10">w</tspan>·x<tspan baseline-shift="sub" font-size="10">w</tspan>·π)</text>
+  <rect x="460" y="362" width="110" height="44" rx="8" fill="#5b21b6"/>
+  <text x="515" y="389" text-anchor="middle" font-size="13" fill="#ffffff">RY(s<tspan baseline-shift="sub" font-size="10">w</tspan>·x<tspan baseline-shift="sub" font-size="10">w</tspan>·π)</text>
+  <rect x="460" y="434" width="110" height="44" rx="8" fill="#5b21b6"/>
+  <text x="515" y="461" text-anchor="middle" font-size="13" fill="#ffffff">RY(s<tspan baseline-shift="sub" font-size="10">w</tspan>·x<tspan baseline-shift="sub" font-size="10">w</tspan>·π)</text>
+  <rect x="460" y="506" width="110" height="44" rx="8" fill="#5b21b6"/>
+  <text x="515" y="533" text-anchor="middle" font-size="13" fill="#ffffff">RY(s<tspan baseline-shift="sub" font-size="10">w</tspan>·x<tspan baseline-shift="sub" font-size="10">w</tspan>·π)</text>
+  <rect x="460" y="578" width="110" height="44" rx="8" fill="#5b21b6"/>
+  <text x="515" y="605" text-anchor="middle" font-size="13" fill="#ffffff">RY(s<tspan baseline-shift="sub" font-size="10">w</tspan>·x<tspan baseline-shift="sub" font-size="10">w</tspan>·π)</text>
+  <rect x="600" y="216" width="120" height="48" rx="8" fill="#5b21b6"/>
+  <text x="660" y="245" text-anchor="middle" font-size="14" fill="#ffffff">Rot(φ,θ,ω)</text>
+  <rect x="600" y="288" width="120" height="48" rx="8" fill="#5b21b6"/>
+  <text x="660" y="317" text-anchor="middle" font-size="14" fill="#ffffff">Rot(φ,θ,ω)</text>
+  <rect x="600" y="360" width="120" height="48" rx="8" fill="#5b21b6"/>
+  <text x="660" y="389" text-anchor="middle" font-size="14" fill="#ffffff">Rot(φ,θ,ω)</text>
+  <rect x="600" y="432" width="120" height="48" rx="8" fill="#5b21b6"/>
+  <text x="660" y="461" text-anchor="middle" font-size="14" fill="#ffffff">Rot(φ,θ,ω)</text>
+  <rect x="600" y="504" width="120" height="48" rx="8" fill="#5b21b6"/>
+  <text x="660" y="533" text-anchor="middle" font-size="14" fill="#ffffff">Rot(φ,θ,ω)</text>
+  <rect x="600" y="576" width="120" height="48" rx="8" fill="#5b21b6"/>
+  <text x="660" y="605" text-anchor="middle" font-size="14" fill="#ffffff">Rot(φ,θ,ω)</text>
+  <line x1="780" y1="240" x2="780" y2="312" stroke="#5b21b6" stroke-width="2.5"/>
+  <circle cx="780" cy="240" r="5.5" fill="#5b21b6"/>
+  <circle cx="780" cy="312" r="9" fill="#ffffff" stroke="#5b21b6" stroke-width="2.5"/>
+  <line x1="774" y1="312" x2="786" y2="312" stroke="#5b21b6" stroke-width="2.5"/>
+  <line x1="780" y1="306" x2="780" y2="318" stroke="#5b21b6" stroke-width="2.5"/>
+  <line x1="800" y1="312" x2="800" y2="384" stroke="#5b21b6" stroke-width="2.5"/>
+  <circle cx="800" cy="312" r="5.5" fill="#5b21b6"/>
+  <circle cx="800" cy="384" r="9" fill="#ffffff" stroke="#5b21b6" stroke-width="2.5"/>
+  <line x1="794" y1="384" x2="806" y2="384" stroke="#5b21b6" stroke-width="2.5"/>
+  <line x1="800" y1="378" x2="800" y2="390" stroke="#5b21b6" stroke-width="2.5"/>
+  <line x1="820" y1="384" x2="820" y2="456" stroke="#5b21b6" stroke-width="2.5"/>
+  <circle cx="820" cy="384" r="5.5" fill="#5b21b6"/>
+  <circle cx="820" cy="456" r="9" fill="#ffffff" stroke="#5b21b6" stroke-width="2.5"/>
+  <line x1="814" y1="456" x2="826" y2="456" stroke="#5b21b6" stroke-width="2.5"/>
+  <line x1="820" y1="450" x2="820" y2="462" stroke="#5b21b6" stroke-width="2.5"/>
+  <line x1="840" y1="456" x2="840" y2="528" stroke="#5b21b6" stroke-width="2.5"/>
+  <circle cx="840" cy="456" r="5.5" fill="#5b21b6"/>
+  <circle cx="840" cy="528" r="9" fill="#ffffff" stroke="#5b21b6" stroke-width="2.5"/>
+  <line x1="834" y1="528" x2="846" y2="528" stroke="#5b21b6" stroke-width="2.5"/>
+  <line x1="840" y1="522" x2="840" y2="534" stroke="#5b21b6" stroke-width="2.5"/>
+  <line x1="860" y1="528" x2="860" y2="600" stroke="#5b21b6" stroke-width="2.5"/>
+  <circle cx="860" cy="528" r="5.5" fill="#5b21b6"/>
+  <circle cx="860" cy="600" r="9" fill="#ffffff" stroke="#5b21b6" stroke-width="2.5"/>
+  <line x1="854" y1="600" x2="866" y2="600" stroke="#5b21b6" stroke-width="2.5"/>
+  <line x1="860" y1="594" x2="860" y2="606" stroke="#5b21b6" stroke-width="2.5"/>
+  <path d="M 890 600 L 890 672 Q 890 688 906 688 L 906 240" fill="none" stroke="#5b21b6" stroke-width="2.5"/>
+  <circle cx="890" cy="600" r="5.5" fill="#5b21b6"/>
+  <circle cx="906" cy="240" r="9" fill="#ffffff" stroke="#5b21b6" stroke-width="2.5"/>
+  <line x1="900" y1="240" x2="912" y2="240" stroke="#5b21b6" stroke-width="2.5"/>
+  <line x1="906" y1="234" x2="906" y2="246" stroke="#5b21b6" stroke-width="2.5"/>
+  <text x="922" y="700" text-anchor="start" font-size="13" fill="#6b7280">ring CNOT</text>
+  <text x="640" y="668" text-anchor="middle" font-size="13" font-style="italic" fill="#6b7280">learnable per-qubit scale s<tspan baseline-shift="sub" font-size="10">w</tspan> — re-uploads first 6 latent components</text>
+  <rect x="980" y="218" width="70" height="44" rx="8" fill="#5b21b6"/>
+  <text x="1015" y="245" text-anchor="middle" font-size="13" fill="#ffffff">RY(μ<tspan baseline-shift="sub" font-size="10">0</tspan>)</text>
+  <rect x="1060" y="218" width="70" height="44" rx="8" fill="#5b21b6"/>
+  <text x="1095" y="245" text-anchor="middle" font-size="13" fill="#ffffff">RZ(μ<tspan baseline-shift="sub" font-size="10">1</tspan>)</text>
+  <rect x="1160" y="220" width="34" height="40" rx="4" fill="#ffffff" stroke="#5b21b6" stroke-width="2.5"/>
+  <path d="M 1168 248 A 9 9 0 0 1 1186 248" fill="none" stroke="#5b21b6" stroke-width="2"/>
+  <line x1="1177" y1="248" x2="1177" y2="236" stroke="#5b21b6" stroke-width="2"/>
+  <text x="1212" y="246" text-anchor="start" font-size="16" font-weight="bold" fill="#5b21b6">⟨Z₀⟩</text>
+  <rect x="250" y="730" width="900" height="64" rx="10" fill="#f3f4f6" stroke="#5b21b6" stroke-width="2"/>
+  <text x="700" y="756" text-anchor="middle" font-size="15" font-weight="bold" fill="#5b21b6">6-qubit VQC — one re-uploading layer | ansatz: 18 CNOTs/layer-ring</text>
+  <text x="700" y="780" text-anchor="middle" font-size="15" font-weight="bold" fill="#5b21b6">trainable: 54 rotation + 6 scale + 2 measurement = 62 parameters</text>
+</svg>
