@@ -25,6 +25,7 @@ Artifacts (per plan Data Flow)::
     results/vqc_qpu_probs.npy          QPU inference probabilities
     results/vqc_qpu_sim_probs.npy      ideal-simulator probabilities
     results/vqc_fakekingston_probs.npy FakeKingston noisy-sim probabilities
+    results/qpu_sample_indices.npy     original test-row indices of the balanced subset
     results/zne_comparison.csv         sim vs noisy-sim vs raw-QPU vs ZNE table
 """
 
@@ -38,6 +39,37 @@ from pathlib import Path
 import numpy as np
 
 SEED = 6  # project-wide random seed (AGENTS.md global rule)
+
+# SamplerV2 service cap for a single job: ~10M circuit executions (circuits x
+# shots). Batching many pubs per job uses the device far more efficiently than
+# one job per sample; the chunk size is derived from this cap instead of an
+# arbitrary 64-circuit ceiling (which serialized the full test set across many
+# jobs). A safety margin keeps jobs under the hard limit service-side.
+_MAX_EXECUTIONS_PER_JOB = 10_000_000
+_MAX_EXECUTIONS_SAFETY = 0.8
+_QPU_TWIRL_RANDOMIZATIONS = 32  # Pauli twirling rounds (no usage increase: auto shot allocation)
+
+
+def _job_chunk_size(n_circuits: int, shots: int, max_circuits_per_job: int = 0) -> int:
+    """Per-SamplerV2-job circuit count when batching QPU inference / ZNE.
+
+    ``max_circuits_per_job`` is an explicit cap (0 = auto). Auto derives it
+    from the ~10M executions/job service limit: ``10M // shots`` scaled by the
+    safety margin, capped at ``n_circuits``. Both batch loops (inference and
+    ZNE) use this so a full test set fits in one job whenever possible.
+
+    Args:
+        n_circuits: Total number of circuits to submit.
+        shots: Shots per circuit.
+        max_circuits_per_job: Explicit circuit cap per job; 0 = auto-derive.
+
+    Returns:
+        Circuits per job, in ``[1, n_circuits]``.
+    """
+    if max_circuits_per_job and max_circuits_per_job > 0:
+        return max(1, min(int(max_circuits_per_job), n_circuits))
+    auto = int(_MAX_EXECUTIONS_PER_JOB // max(1, int(shots)) * _MAX_EXECUTIONS_SAFETY)
+    return max(1, min(auto, n_circuits))
 
 
 def resolve_ibm_token(cfg) -> str | None:
@@ -108,6 +140,7 @@ def get_ibm_backend(cfg) -> object | None:
     try:
         service = QiskitRuntimeService(
             token=token,
+            channel=cfg.ibm_channel or None,
             instance=cfg.ibm_instance or None,
         )
         if cfg.ibm_backend:
@@ -153,8 +186,12 @@ def extract_z0_from_counts(counts, n_qubits) -> float:
 def _get_to_qiskit():
     """Return a ``to_qiskit`` converter callable, or ``None`` if unavailable.
 
-    Tries ``pennylane_qiskit.to_qiskit`` first (the plugin), then
-    ``pennylane.qml.to_qiskit`` (re-exported in newer PennyLane).
+    Tries ``pennylane_qiskit.to_qiskit`` first (the plugin's classic API),
+    then ``pennylane.qml.to_qiskit`` (re-exported in newer PennyLane), then a
+    manual fallback for pennylane-qiskit >= 0.45 (which removed the
+    top-level helper): a ``qnode.construct`` + Qiskit-gate-set decomposition
+    + ``pennylane_qiskit.converter.circuit_to_qiskit`` pipeline mirroring
+    ``QiskitDevice.preprocess``.
     """
     try:
         from pennylane_qiskit import to_qiskit
@@ -167,7 +204,65 @@ def _get_to_qiskit():
 
         return qml.to_qiskit
     except (ImportError, AttributeError):
+        pass
+
+    # pennylane-qiskit >= 0.45: classic `to_qiskit` is gone; rebuild it from
+    # the low-level converter used by QiskitDevice itself.
+    try:
+        import pennylane as qml
+        from pennylane.devices.preprocess import decompose as pl_decompose
+        from pennylane_qiskit.converter import QISKIT_OPERATION_MAP, circuit_to_qiskit
+    except ImportError:
         return None
+
+    operations = set(QISKIT_OPERATION_MAP.keys()) | {"GlobalPhase"}
+
+    def converter(qnode):
+        def convert_qnode(params, features):
+            params = np.asarray(params, dtype=float)
+            features = np.asarray(features, dtype=float)
+            tape = qnode.construct((params, features), {})
+            batch, _fn = pl_decompose(
+                tape,
+                target_gates=operations,
+                stopping_condition=lambda op: op.name in operations,
+                skip_initial_state_prep=False,
+            )
+            expanded = batch[0]
+            return circuit_to_qiskit(
+                expanded,
+                register_size=len(expanded.wires),
+                diagonalize=True,
+                measure=True,
+            )
+
+        return convert_qnode
+
+    return converter
+
+
+def _strip_global_phase(qiskit_circuit):
+    """Remove the ``global_phase`` op emitted by the pennylane-qiskit converter.
+
+    ``pl_decompose`` leaves a trailing ``GlobalPhase`` gate on the tape (a
+    remnant of the ``AmplitudeEmbedding`` -> ``StatePrep`` rewrite), which
+    ``qiskit.qasm2.dumps`` refuses to export (``QASM2ExportError:
+    OpenQASM 2 cannot represent 'global_phase'``). Mitiq's ZNE converts the
+    circuit to Cirq through QASM2, so the op must be dropped. A global phase
+    has no effect on the Pauli-Z expectation value that only the bitstring
+    counts reduce to, so removal is measurement-safe.
+
+    Args:
+        qiskit_circuit: A Qiskit ``QuantumCircuit``.
+
+    Returns:
+        The same circuit with ``global_phase`` ops removed (mutated in place).
+    """
+    qiskit_circuit.global_phase = 0
+    qiskit_circuit.data = [
+        instr for instr in qiskit_circuit.data if instr.operation.name != "global_phase"
+    ]
+    return qiskit_circuit
 
 
 def _qnode_to_qiskit(circuit_qnode, params, features):
@@ -193,7 +288,7 @@ def _qnode_to_qiskit(circuit_qnode, params, features):
         )
     params = np.asarray(params, dtype=float)
     features = np.asarray(features, dtype=float)
-    return to_qiskit(circuit_qnode)(params, features)
+    return _strip_global_phase(to_qiskit(circuit_qnode)(params, features))
 
 
 def _extract_counts(pub_result):
@@ -223,7 +318,41 @@ def _extract_counts(pub_result):
     raise RuntimeError("No measurement counts found in SamplerV2 result")
 
 
-def make_ibm_executor(backend, shots=1024):
+def _make_sampler(backend, cfg=None):
+    """Build a job-mode ``SamplerV2`` with optional DD + Pauli twirling.
+
+    Dynamical decoupling (``XpXm`` sequence, middle slack distribution)
+    suppresses idle-window dephasing; Pauli gate twirling (32 randomizations)
+    converts coherent gate errors into stochastic noise without changing the
+    expectation value. Both are SamplerV2 runtime options (IBM API contract
+    names). Disabled when the corresponding ``cfg`` toggle is off or the
+    runtime rejects the options (older qiskit-ibm-runtime) — never fatal.
+    """
+    from qiskit_ibm_runtime import SamplerV2
+
+    sampler = SamplerV2(mode=backend)
+    if cfg is None:
+        return sampler
+    try:
+        if getattr(cfg, "qpu_dd_enable", False):
+            sampler.options.dynamical_decoupling.enable = True
+            sampler.options.dynamical_decoupling.sequence_type = "XpXm"
+            sampler.options.dynamical_decoupling.extra_slack_distribution = "middle"
+        if getattr(cfg, "qpu_twirl_enable", False):
+            sampler.options.twirling.enable_gates = True
+            sampler.options.twirling.num_randomizations = _QPU_TWIRL_RANDOMIZATIONS
+            sampler.options.twirling.shots_per_randomization = "auto"
+    except Exception as exc:
+        warnings.warn(
+            f"SamplerV2 runtime options rejected ({exc}); running without DD/twirling.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return SamplerV2(mode=backend)
+    return sampler
+
+
+def make_ibm_executor(backend, shots=1024, cfg=None):
     """Build a mitiq-compatible executor: Qiskit circuit -> float ⟨Z₀⟩.
 
     The returned callable transpiles the circuit for *backend*
@@ -233,6 +362,9 @@ def make_ibm_executor(backend, shots=1024):
     Args:
         backend: A Qiskit ``BackendV2`` (e.g. from ``get_ibm_backend``).
         shots: Number of shots per circuit.
+        cfg: Optional ``Config``; enables the DD + Pauli-twirling runtime
+            options controlled by ``cfg.qpu_dd_enable`` /
+            ``cfg.qpu_twirl_enable`` when provided.
 
     Returns:
         ``executor(circuit) -> float``.
@@ -240,10 +372,9 @@ def make_ibm_executor(backend, shots=1024):
 
     def executor(circuit):
         from qiskit import transpile
-        from qiskit_ibm_runtime import SamplerV2
 
         tqc = transpile(circuit, backend=backend, optimization_level=3)
-        sampler = SamplerV2(mode=backend)
+        sampler = _make_sampler(backend, cfg)
         job = sampler.run([tqc], shots=shots)
         counts = _extract_counts(job.result()[0])
         return extract_z0_from_counts(counts, tqc.num_qubits)
@@ -251,13 +382,13 @@ def make_ibm_executor(backend, shots=1024):
     return executor
 
 
-def run_vqc_on_qpu(circuit_qnode, params, X_subset, backend, shots=1024) -> np.ndarray | None:
+def run_vqc_on_qpu(circuit_qnode, params, X_subset, backend, shots=1024, cfg=None) -> np.ndarray | None:
     """Run the trained VQC on real IBM hardware for a subset of samples.
 
-    For each sample: convert the bound QNode to a Qiskit circuit, transpile
-    with ``optimization_level=3``, submit via ``SamplerV2`` in job mode (no
-    Session), extract shot counts, compute ``⟨Z₀⟩`` and map to probability
-    ``(1 + ⟨Z₀⟩) / 2``.
+    All sample circuits are transpiled in one pass and submitted to
+    ``SamplerV2`` in job mode, chunked at ``cfg.qpu_max_circuits_per_job``
+    (0 = auto-derive from the ~10M executions/job service cap) instead of one
+    job per sample. Results are read back in submission order.
 
     Args:
         circuit_qnode: The ``qml.QNode`` built by
@@ -266,6 +397,8 @@ def run_vqc_on_qpu(circuit_qnode, params, X_subset, backend, shots=1024) -> np.n
         X_subset: Array of feature vectors, shape ``(n_samples, 64)``.
         backend: A Qiskit ``BackendV2`` (e.g. from ``get_ibm_backend``).
         shots: Number of shots per circuit (default 1024).
+        cfg: Optional ``Config``; supplies the per-job circuit cap and the
+            DD / Pauli-twirling runtime options (see ``_make_sampler``).
 
     Returns:
         Array of pneumonia probabilities, shape ``(n_samples,)``, or ``None``
@@ -293,20 +426,25 @@ def run_vqc_on_qpu(circuit_qnode, params, X_subset, backend, shots=1024) -> np.n
 
     params = np.asarray(params, dtype=float)
     X = np.asarray(X_subset, dtype=float)
+    circuits = [to_qiskit(circuit_qnode)(params, x) for x in X]
+    tqcs = transpile(circuits, backend=backend, optimization_level=3)
+
     probs = np.empty(len(X), dtype=float)
-    for i, x in enumerate(X):
-        qc = to_qiskit(circuit_qnode)(params, x)
-        tqc = transpile(qc, backend=backend, optimization_level=3)
-        sampler = SamplerV2(mode=backend)
-        job = sampler.run([tqc], shots=shots)
-        counts = _extract_counts(job.result()[0])
-        z0 = extract_z0_from_counts(counts, tqc.num_qubits)
-        probs[i] = (1.0 + z0) / 2.0
+    max_per_job = getattr(cfg, "qpu_max_circuits_per_job", 0) if cfg is not None else 0
+    chunk_size = _job_chunk_size(len(tqcs), shots, max_per_job)
+    sampler = _make_sampler(backend, cfg)
+    for start in range(0, len(tqcs), chunk_size):
+        chunk = tqcs[start : start + chunk_size]
+        pub_results = sampler.run(chunk, shots=shots).result()
+        for j, pub in enumerate(pub_results):
+            counts = _extract_counts(pub)
+            z0 = extract_z0_from_counts(counts, chunk[j].num_qubits)
+            probs[start + j] = (1.0 + z0) / 2.0
     return probs
 
 
 def run_zne_mitigation(
-    circuit_qnode, params, x_sample, backend, executor, scale_factors=(1, 2, 3)
+    circuit_qnode, params, x_sample, backend, executor, scale_factors=(1, 2, 3), cfg=None
 ) -> float:
     """Apply Zero-Noise Extrapolation to a single sample's expectation value.
 
@@ -323,13 +461,15 @@ def run_zne_mitigation(
         executor: Callable ``circuit -> float ⟨Z₀⟩`` (e.g. from
             ``make_ibm_executor``). When ``None``, one is built from *backend*.
         scale_factors: Noise scale factors for Richardson extrapolation.
+        cfg: Optional ``Config`` forwarded to ``make_ibm_executor`` when a
+            new executor must be built.
 
     Returns:
         The ZNE-mitigated ``⟨Z₀⟩``. If mitiq is missing, returns the raw
         noisy value from *executor* with a warning.
     """
     if executor is None:
-        executor = make_ibm_executor(backend)
+        executor = make_ibm_executor(backend, cfg=cfg)
 
     qc = _qnode_to_qiskit(circuit_qnode, params, x_sample)
 
@@ -346,6 +486,85 @@ def run_zne_mitigation(
 
     factory = RichardsonFactory(scale_factors=list(scale_factors))
     return mitiq.zne.execute_with_zne(circuit=qc, executor=executor, factory=factory)
+
+
+def run_zne_batched(
+    circuit_qnode, params, X_subset, backend, scale_factors=(1, 2, 3), shots=1024, cfg=None
+) -> np.ndarray | None:
+    """Apply Zero-Noise Extrapolation to many samples in one SamplerV2 job.
+
+    Folds every sample circuit at every noise scale factor with mitiq's
+    ``fold_gates_at_random``, transpiles the whole batch in one pass and
+    submits it as a single job (chunked at ``cfg.qpu_max_circuits_per_job``,
+    0 = auto from the ~10M executions/job cap), then Richardson-extrapolates
+    per sample. This replaces the per-sample ``execute_with_zne`` flow (3 jobs
+    per sample) with one job total.
+
+    Args:
+        circuit_qnode: The ``qml.QNode`` built by
+            ``pipeline.ansatz.build_vqc_circuit``.
+        params: Flat trainable parameter array (``split_params`` layout).
+        X_subset: Array of feature vectors, shape ``(n_samples, 64)``.
+        backend: A Qiskit ``BackendV2`` (e.g. from ``get_ibm_backend``).
+        scale_factors: Noise scale factors for Richardson extrapolation.
+        shots: Number of shots per circuit (default 1024).
+        cfg: Optional ``Config``; supplies the per-job circuit cap and the
+            DD / Pauli-twirling runtime options (see ``_make_sampler``).
+
+    Returns:
+        Array of ZNE-mitigated probabilities ``(1 + ⟨Z₀⟩) / 2``, shape
+        ``(n_samples,)``, or ``None`` if mitiq / qiskit are unavailable.
+    """
+    try:
+        from qiskit import transpile
+        from qiskit_ibm_runtime import SamplerV2
+    except ImportError:
+        warnings.warn(
+            "qiskit / qiskit-ibm-runtime not installed; cannot run ZNE on QPU.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return None
+    try:
+        from mitiq.zne.inference import RichardsonFactory
+        from mitiq.zne.scaling import fold_gates_at_random
+    except ImportError:
+        warnings.warn(
+            "mitiq not installed; cannot run batched ZNE.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return None
+
+    params = np.asarray(params, dtype=float)
+    X = np.asarray(X_subset, dtype=float)
+    sfs = list(scale_factors)
+
+    jobs = []
+    for i, x in enumerate(X):
+        qc = _qnode_to_qiskit(circuit_qnode, params, x)
+        for k, sf in enumerate(sfs):
+            jobs.append((i, k, fold_gates_at_random(qc, sf)))
+
+    tqcs = transpile([jc for _, _, jc in jobs], backend=backend, optimization_level=3)
+
+    z0 = np.empty((len(X), len(sfs)), dtype=float)
+    max_per_job = getattr(cfg, "qpu_max_circuits_per_job", 0) if cfg is not None else 0
+    chunk_size = _job_chunk_size(len(tqcs), shots, max_per_job)
+    sampler = _make_sampler(backend, cfg)
+    for start in range(0, len(tqcs), chunk_size):
+        chunk = tqcs[start : start + chunk_size]
+        pub_results = sampler.run(chunk, shots=shots).result()
+        for j, pub in enumerate(pub_results):
+            sample_idx, scale_idx, _ = jobs[start + j]
+            counts = _extract_counts(pub)
+            z0[sample_idx, scale_idx] = extract_z0_from_counts(counts, chunk[j].num_qubits)
+
+    probs = np.empty(len(X), dtype=float)
+    for i in range(len(X)):
+        mitigated_z0 = RichardsonFactory.extrapolate(sfs, z0[i].tolist())
+        probs[i] = (1.0 + mitigated_z0) / 2.0
+    return probs
 
 
 def run_fakekingston_baseline(
@@ -380,20 +599,34 @@ def run_fakekingston_baseline(
         )
         return None
 
-    # FakeKingston lives in different modules across qiskit-ibm-runtime
+    # Heron r2 fakes live in different modules across qiskit-ibm-runtime
     # versions; try the modern location first, then the legacy one.
-    try:
-        from qiskit_ibm_runtime.fake_provider import FakeKingston
-    except ImportError:
+    # FakeKingston was removed in qiskit-ibm-runtime >= 0.45; FakeFez and
+    # FakeMarrakesh are the equivalent Heron r2 devices there.
+    fake_cls = None
+    for _name in ("FakeKingston", "FakeFez", "FakeMarrakesh"):
+        try:
+            from qiskit_ibm_runtime.fake_provider import fake_provider as _fp
+
+            fake_cls = getattr(_fp, _name, None)
+            if fake_cls is not None:
+                break
+        except ImportError:
+            continue
+    if fake_cls is None:
         try:
             from qiskit.providers.fake_provider import FakeKingston
+
+            fake_cls = FakeKingston
         except ImportError:
-            warnings.warn(
-                "FakeKingston unavailable; skipping noisy baseline.",
-                RuntimeWarning,
-                stacklevel=2,
-            )
-            return None
+            fake_cls = None
+    if fake_cls is None:
+        warnings.warn(
+            "No Heron r2 fake backend available; skipping noisy baseline.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return None
 
     to_qiskit = _get_to_qiskit()
     if to_qiskit is None:
@@ -404,7 +637,7 @@ def run_fakekingston_baseline(
         )
         return None
 
-    noise_model = NoiseModel.from_backend(FakeKingston())
+    noise_model = NoiseModel.from_backend(fake_cls())
     backend = AerSimulator(noise_model=noise_model)
 
     params = np.asarray(params, dtype=float)
@@ -418,6 +651,60 @@ def run_fakekingston_baseline(
         z0 = extract_z0_from_counts(counts, tqc.num_qubits)
         probs[i] = (1.0 + z0) / 2.0
     return probs
+
+
+def select_qpu_subset(X, y, n_samples, seed=SEED):
+    """Select a class-balanced, reproducible QPU evaluation subset.
+
+    The project's test split is label-sorted (all negatives precede all
+    positives), so a naive ``X[:n]`` slice evaluates a single class and
+    makes AUC / sensitivity undefined — the bug that corrupted the
+    2026-09-15 ``ibm_miami`` run (79 jobs on an all-negative slice). This
+    helper performs stratified sampling — up to ``ceil(n/2)`` positives and
+    ``floor(n/2)`` negatives, topped up from the minority-direction side
+    when one class is under-populated — using the project-wide seed, and
+    returns the **row indices** so the job → sample mapping can always be
+    reconstructed from ``results/qpu_sample_indices.npy``.
+
+    Args:
+        X: Feature matrix of shape ``(n_samples, n_features)``.
+        y: Label vector of shape ``(n_samples,)``.
+        n_samples: Target subset size (capped at ``len(y)``).
+        seed: Random seed (project-wide ``SEED = 6`` by default).
+
+    Returns:
+        Tuple ``(X_sub, y_sub, idx)`` where the selected rows are returned
+        in *submission order* (seeded-shuffled) and ``idx`` are the original
+        row indices (same order) in ``X`` / ``y``.
+    """
+    X = np.asarray(X, dtype=float)
+    y = np.asarray(y)
+    n = min(int(n_samples), len(y))
+    if n <= 0:
+        raise ValueError("n_samples must be a positive integer")
+
+    rng = np.random.default_rng(seed)
+    pos = np.flatnonzero(y == 1)
+    neg = np.flatnonzero(y == 0)
+
+    n_pos_target = int(np.ceil(n / 2))
+    n_neg_target = n - n_pos_target
+    n_pos = min(n_pos_target, len(pos))
+    n_neg = min(n_neg_target, len(neg))
+    if n_pos + n_neg < n:  # one class under-populated → top up from the other
+        shortfall = n - (n_pos + n_neg)
+        if n_neg < n_neg_target and len(pos) > n_pos:
+            take = min(shortfall, len(pos) - n_pos)
+            n_pos += take
+            shortfall -= take
+        if shortfall > 0 and len(neg) > n_neg:
+            n_neg += min(shortfall, len(neg) - n_neg)
+
+    pos_idx = rng.choice(pos, size=n_pos, replace=False)
+    neg_idx = rng.choice(neg, size=n_neg, replace=False)
+    idx = np.concatenate([pos_idx, neg_idx])
+    rng.shuffle(idx)  # submission order — not class-blocked
+    return X[idx], y[idx], idx
 
 
 def _save_artifacts(cfg, result) -> None:
@@ -527,26 +814,24 @@ def qpu_evaluate(cfg, circuit_qnode, params, X_qpu, y_qpu, backend=None) -> dict
             result["backend_name"] = getattr(backend, "name", str(backend))
             try:
                 result["qpu_probs"] = run_vqc_on_qpu(
-                    circuit_qnode, params, X, backend, shots=cfg.n_qpu_shots
+                    circuit_qnode, params, X, backend, shots=cfg.n_qpu_shots, cfg=cfg
                 )
             except Exception as exc:
                 warnings_list.append(f"QPU inference failed: {exc}")
 
-            # ZNE on a small sample (first min(10, n) samples).
+            # ZNE on a small sample (first min(10, n) samples), batched into
+            # a single job instead of one job per sample.
             try:
-                executor = make_ibm_executor(backend, shots=cfg.n_qpu_shots)
                 n_zne = min(10, len(X))
-                zne_probs = np.empty(n_zne, dtype=float)
-                for i in range(n_zne):
-                    zne_probs[i] = run_zne_mitigation(
-                        circuit_qnode,
-                        params,
-                        X[i],
-                        backend,
-                        executor,
-                        scale_factors=cfg.zne_scale_factors,
-                    )
-                result["zne_probs"] = zne_probs
+                result["zne_probs"] = run_zne_batched(
+                    circuit_qnode,
+                    params,
+                    X[:n_zne],
+                    backend,
+                    scale_factors=cfg.zne_scale_factors,
+                    shots=cfg.n_qpu_shots,
+                    cfg=cfg,
+                )
             except Exception as exc:
                 warnings_list.append(f"ZNE mitigation failed: {exc}")
 
@@ -564,7 +849,9 @@ def qpu_evaluate(cfg, circuit_qnode, params, X_qpu, y_qpu, backend=None) -> dict
         try:
             from pipeline.evaluate import compute_all_metrics
 
-            result["metrics"] = compute_all_metrics(primary, np.asarray(y_qpu), tau=0.5)
+            result["metrics"] = compute_all_metrics(
+                primary, np.asarray(y_qpu), tau=cfg.qpu_tau
+            )
         except Exception as exc:
             warnings_list.append(f"Metrics computation failed: {exc}")
 
@@ -585,6 +872,7 @@ __all__ = [
     "make_ibm_executor",
     "run_vqc_on_qpu",
     "run_zne_mitigation",
+    "run_zne_batched",
     "run_fakekingston_baseline",
     "qpu_evaluate",
 ]

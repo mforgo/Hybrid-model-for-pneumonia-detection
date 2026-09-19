@@ -34,7 +34,7 @@ color_jitter_contrast: 0.2
 backbone: "convnext_tiny"
 feature_dim: 768
 dann_epochs: 10
-dann_lr: 1e-4
+dann_lr: 1.0e-4  # explicit dot: bare "1e-4" parses as str in PyYAML
 use_dann: true
 
 # -----------------------------------------------------------------------------
@@ -47,7 +47,7 @@ vae_lambda_clf: 0.01
 vae_lambda_coral: 0.0
 vae_epochs: 30
 vae_batch_size: 32
-vae_lr: 1e-3
+vae_lr: 1.0e-3
 
 # -----------------------------------------------------------------------------
 # VQC
@@ -64,8 +64,8 @@ vqc_ansatz: "reupload"       # "reupload" | "he"
 # Training
 # -----------------------------------------------------------------------------
 batch_size: 16
-learning_rate: 1e-3
-lr_min: 1e-5
+learning_rate: 1.0e-3
+lr_min: 1.0e-5
 warmup_epochs: 3
 epochs: 50
 early_stopping_patience: 10  # AGENTS.md spec (notebook used 3)
@@ -102,9 +102,15 @@ knn_k: 5
 # -----------------------------------------------------------------------------
 run_mode: "sim"  # "sim" | "qpu" | "both"
 ibm_token: ""
-ibm_instance: "ibm-q/open/main"
-ibm_backend: ""  # "" = auto-select least-busy Heron
+ibm_channel: "ibm_quantum_platform"
+ibm_instance: ""  # "" = service default instance
+ibm_backend: "ibm_kingston"  # Heron r2 (CLOPS ~10x ibm_miami); "" = auto-select least-busy
 n_qpu_shots: 1024
+n_qpu_samples: 50  # class-balanced subset size for hardware evaluation
+qpu_tau: 0.80  # decision threshold for QPU-stage metrics (VQC validation-selected operating point)
+qpu_max_circuits_per_job: 0  # 0 = auto: ~10M executions/job cap // shots, 20% safety margin
+qpu_dd_enable: true  # dynamical decoupling on every SamplerV2 job
+qpu_twirl_enable: true  # Pauli gate twirling (32 randomizations, auto shot allocation)
 
 # -----------------------------------------------------------------------------
 # ZNE

@@ -109,10 +109,23 @@ class Config:
 
     # QPU
     run_mode: str = "sim"
+    ibm_channel: str = "ibm_quantum_platform"
     ibm_token: str = ""
-    ibm_instance: str = "ibm-q/open/main"
-    ibm_backend: str = ""
+    ibm_instance: str = ""  # "" = service default instance (ibm-q/open/main is not valid for this account)
+    ibm_backend: str = "ibm_kingston"  # Heron r2 (CLOPS ~10x ibm_miami); "" = least_busy
     n_qpu_shots: int = 1024
+    n_qpu_samples: int = 50
+    # Circuits per SamplerV2 job when batching; 0 = auto-derive from the
+    # ~10M executions/job service cap (10M // shots, with safety margin).
+    qpu_max_circuits_per_job: int = 0
+    # SamplerV2 runtime error-mitigation options applied to every job.
+    qpu_dd_enable: bool = True       # dynamical decoupling (XpXm idle windows)
+    qpu_twirl_enable: bool = True    # Pauli gate twirling (32 randomizations)
+    # Decision threshold for QPU-stage metrics. Defaults to the VQC's
+    # validation-selected operating point (tau = 0.80); do NOT evaluate the
+    # QPU slice at tau = 0.5, the VQC's hardened probability scale would
+    # dominate everything as positive and produce misleading accuracy.
+    qpu_tau: float = 0.80
 
     # ZNE
     zne_scale_factors: list[int] = field(default_factory=lambda: [1, 2, 3])
@@ -194,6 +207,16 @@ def _list_element_type(target_type: Any) -> str | None:
     if t.startswith("list["):
         return t[5:-1].strip()
     return None
+
+
+def _is_numeric_annotation(target_type: Any) -> bool:
+    """True if the annotation is int/float/bool-typed (incl. ``int | None``).
+
+    String fields must never be coerced: ``dataset_path`` or
+    ``ibm_channel`` stay strings even if their value looks like a number.
+    """
+    t = str(target_type)
+    return any(tok in t for tok in ("int", "float", "bool"))
 
 
 def _parse_list(raw: str, target_type: Any) -> list:
@@ -296,7 +319,13 @@ def load_config(
         with open(path, "r") as f:
             yaml_data = yaml.safe_load(f)
         if isinstance(yaml_data, dict):
-            cfg_dict.update(yaml_data)
+            # Bare "1e-4" loads as str (PyYAML float resolver needs a dot).
+            for key, value in yaml_data.items():
+                if isinstance(value, str) and _is_numeric_annotation(
+                    _field_type(key)
+                ):
+                    value = _coerce_value(value, _field_type(key))
+                cfg_dict[key] = value
 
     if overrides:
         for key, value in overrides.items():

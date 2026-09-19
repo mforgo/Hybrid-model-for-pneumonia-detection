@@ -25,23 +25,26 @@ Running the trained VQC on real IBM Quantum hardware with ZNE error mitigation.
 ### Full pipeline (train → evaluate → QPU)
 
 ```bash
-python -m pipeline.main --stage data,features,vae,train,evaluate,qpu
+python -m pipeline --stage data,features,vae,train,evaluate,qpu
 ```
 
 ### QPU-only (if training already done)
 
 ```bash
-python -m pipeline.main --stage qpu
+python -m pipeline --stage qpu
 ```
 
 ### Config overrides (CLI)
 
 ```bash
-python -m pipeline.main --stage qpu \
-  --set run_mode=both \
-  --set n_qpu_shots=4096 \
-  --set zne_scale_factors="[1, 2, 3, 5]"
+python -m pipeline --stage qpu \
+  --overrides run_mode=both \
+  --overrides n_qpu_shots=4096 \
+  --overrides zne_scale_factors="[1, 2, 3, 5]"
 ```
+
+Note: the CLI takes `--overrides KEY=VALUE` pairs, **not** `--set` (the
+`--stage/--set` syntax in older versions of this runbook was outdated).
 
 | Config field | Default | Meaning |
 |---|---|---|
@@ -49,16 +52,23 @@ python -m pipeline.main --stage qpu \
 | `n_qpu_shots` | `1024` | Shots per circuit execution |
 | `zne_scale_factors` | `[1, 2, 3]` | Noise scaling factors for ZNE |
 | `ibm_token` | `""` | IBM Quantum API token |
-| `ibm_backend` | `""` | Force a specific backend (else `least_busy`) |
-| `ibm_instance` | `"ibm-q/open/main"` | IBM Quantum instance |
+| `ibm_backend` | `"ibm_kingston"` | Heron r2 (CLOPS ~10× `ibm_miami`); `""` = least-busy auto-select |
+| `ibm_instance` | `""` | IBM Quantum instance (service picks automatically when empty) |
+| `qpu_max_circuits_per_job` | `0` | Circuits per SamplerV2 job; `0` = auto from the ~10M executions/job cap |
+| `qpu_dd_enable` | `true` | Dynamical decoupling on every SamplerV2 job |
+| `qpu_twirl_enable` | `true` | Pauli gate twirling (32 randomizations) on every SamplerV2 job |
 
 ## Backend selection
 
 ```python
-backend = service.least_busy(operational=True, simulator=False, min_num_qubits=6)
+backend = service.backend(cfg.ibm_backend)  # default "ibm_kingston"
 ```
 
-Prefers **Heron r2** processors (`ibm_kingston` 156 qubits). Retired backends (`ibm_brisbane`, `ibm_sherbrooke`) are automatically excluded.
+The default backend is **`ibm_kingston`** (Heron r2, 156 qubits). `ibm_miami`
+measured ~10× lower CLOPS in the 2026 literature than other Heron backends,
+so it is no longer the pin target; set `ibm_backend: ""` to fall back to
+`service.least_busy(operational=True, simulator=False, min_num_qubits=6)`.
+Retired backends (`ibm_brisbane`, `ibm_sherbrooke`) are automatically excluded.
 
 ## NISQ state-preparation bottleneck
 
@@ -92,31 +102,51 @@ The amplitude encoding of a 64-dimensional real vector into 6 qubits dominates t
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│  qpu_evaluate(cfg, circuit_qnode, params, X, y)     │
+│  _run_qpu(cfg)  →  _run_qpu_evaluate(cfg, ...)      │
 ├──────────────────────────────────────────────────────┤
 │                                                      │
+│  0. select_qpu_subset(X_test, y_test,               │
+│                        n_qpu_samples, seed=SEED)     │
+│     └─ stratified, class-balanced, seeded shuffle    │
+│     └─ returns (X_sub, y_sub, idx) + persists idx    │
+│        → results/qpu_sample_indices.npy              │
+│                                                      │
+│  then qpu_evaluate(cfg, circuit_qnode, params,       │
+│                    X_sub, y_sub):                    │
 │  1. Ideal-sim probs        (mode="sim" or "both")   │
-│     └─ vqc_predict(X, params)                       │
+│     └─ vqc_predict(X_sub, params)                    │
 │                                                      │
 │  2. Real-hardware probs    (mode="qpu" or "both")   │
 │     ├─ backend = get_ibm_backend(cfg)                │
-│     ├─ run_vqc_on_qpu(circuit, params, X, backend)  │
-│     └─ ZNE on first min(10, N) samples:              │
-│        for each sample:                              │
-│          run_zne_mitigation(                         │
-│            circuit, params, x_i, backend,            │
-│            executor, scale_factors=[1,2,3]           │
-│          )                                           │
+│     ├─ run_vqc_on_qpu(circuit, params, X_sub,        │
+│     │                    backend)                    │
+│     │   └─ ALL circuits in ONE SamplerV2 job         │
+│     │      (chunked at qpu_max_circuits_per_job;     │
+│     │       0 = auto from ~10M executions/job cap)   │
+│     └─ ZNE on first min(10, N) samples, batched:    │
+│        run_zne_batched(circuit, params, X[:10],      │
+│                        backend, scale_factors)       │
+│          └─ folds 10×3 circuits, ONE job             │
+│             + Richardson extrapolation               │
 │                                                      │
 │  3. FakeKingston noisy-sim  (always attempted)       │
-│     └─ run_fakekingston_baseline(circuit, params, X)│
+│     └─ run_fakekingston_baseline(circuit, params,    │
+│                                   X_sub)             │
 │                                                      │
 │  4. Metrics on primary probs (if y available)        │
-│     └─ compute_all_metrics(primary, y, tau=0.5)     │
+│     └─ compute_all_metrics(primary, y_sub, tau=cfg.qpu_tau) │
 │                                                      │
 │  5. Persist artifacts → results/                     │
 └──────────────────────────────────────────────────────┘
 ```
+
+**The evaluation subset is always class-balanced.** The test split is
+label-sorted (all negatives precede all positives), so a naive `X_test[:n]`
+slice evaluates a single class and makes AUC/sensitivity undefined — this
+is what corrupted the 2026-09-15 `ibm_miami` run (79 jobs on an all-negative
+slice). `select_qpu_subset` draws `ceil(n/2)` positives + `floor(n/2)`
+negatives with the project seed and persists the original row indices so the
+job → sample mapping can always be reconstructed.
 
 **Hardware mode is job-mode only** — `SamplerV2(mode=backend)` (no `Session`; Session bills wall-clock time).
 
@@ -124,9 +154,10 @@ The amplitude encoding of a 64-dimensional real vector into 6 qubits dominates t
 
 | File | Contents |
 |---|---|
-| `results/vqc_qpu_probs.npy` | QPU inference probabilities (full test subset) |
+| `results/vqc_qpu_probs.npy` | QPU inference probabilities (class-balanced test subset) |
 | `results/vqc_qpu_sim_probs.npy` | Ideal-simulator probabilities |
 | `results/vqc_fakekingston_probs.npy` | FakeKingston noisy-simulator probabilities |
+| `results/qpu_sample_indices.npy` | Original test-row indices of the balanced subset (job → sample mapping) |
 | `results/zne_comparison.csv` | Per-sample table: `sim_prob`, `fakekingston_prob`, `raw_qpu_prob`, `zne_prob` |
 
 ## ZNE mitigation
@@ -134,15 +165,22 @@ The amplitude encoding of a 64-dimensional real vector into 6 qubits dominates t
 - **Method**: Zero-Noise Extrapolation via [Mitiq](https://mitiq.readthedocs.io/)
 - **Scaling**: Gate-folding at factors `[1, 2, 3]` (configurable)
 - **Extrapolation**: Richardson extrapolation (`RichardsonFactory`)
-- **Coverage**: Applied to first `min(10, N)` test samples (queue-time constraint)
+- **Coverage**: Applied to first `min(10, N)` test samples; all 30 folded
+  circuits (10 samples × 3 factors) run in **one** batched SamplerV2 job
+  (`run_zne_batched`), then extrapolated per sample. No per-sample job loop.
 
 ```python
-# How it works internally:
-mitigated = mitiq.zne.execute_with_zne(
-    circuit,
-    executor=ibm_executor,            # wraps SamplerV2(mode=backend)
-    factory=RichardsonFactory(scale_factors=[1, 2, 3]),
-)
+# How it works internally (batched, single job):
+from mitiq.zne.inference import RichardsonFactory
+from mitiq.zne.scaling import fold_gates_at_random
+
+jobs = []  # (sample_idx, scale_idx, folded_circuit)
+for i, x in enumerate(X_subset):
+    qc = _qnode_to_qiskit(circuit_qnode, params, x)
+    for k, sf in enumerate(scale_factors):
+        jobs.append((i, k, fold_gates_at_random(qc, sf)))
+# 1 SamplerV2 job over all folded circuits → z0[sample, scale]
+# then per-sample: mitigated = RichardsonFactory.extrapolate(scale_factors, z0[i])
 ```
 
 ## Interpreting results
@@ -163,16 +201,16 @@ The `zne_comparison.csv` allows direct comparison across noise regimes:
 | Error | Cause | Fix |
 |---|---|---|
 | `"No IBM backend available"` | Token missing or no backends online | Verify `IBM_TOKEN` env var; check [system status](https://quantum.ibm.com/known-issues) |
-| `"QPU inference failed"` | Queue timeout or backend maintenance | Retry; use `--set ibm_backend=ibm_kingston` for a specific backend |
+| `"QPU inference failed"` | Queue timeout or backend maintenance | Retry; use `--overrides ibm_backend=ibm_kingston` for the Heron r2 default |
 | `"ZNE mitigation failed"` | Insufficient queue budget | Reduce `zne_scale_factors` to `[1, 3]` or `n_qpu_shots` to 512 |
-| Empty `zne_comparison.csv` | ZNE skipped (error or `run_mode=sim`) | Set `--set run_mode=qpu` or `--set run_mode=both` |
+| Empty `zne_comparison.csv` | ZNE skipped (error or `run_mode=sim`) | Set `--overrides run_mode=qpu` or `--overrides run_mode=both` |
 | `ModuleNotFoundError: qiskit_ibm_runtime` | Missing dep | `pip install qiskit-ibm-runtime>=0.47` |
 
 ## Quick verification (no hardware)
 
 ```bash
 # Verify FakeKingston noisy-sim baseline without an IBM token:
-python -m pipeline.main --stage qpu --set run_mode=sim
+python -m pipeline --stage qpu --overrides run_mode=sim
 # → produces vqc_qpu_sim_probs.npy + vqc_fakekingston_probs.npy (no token needed)
 ```
 
