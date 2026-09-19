@@ -105,6 +105,7 @@ _STAGE_ARTIFACTS: dict[str, list[str]] = {
     "qpu": [
         "results/vqc_qpu_probs.npy",
         "results/vqc_fakekingston_probs.npy",
+        "results/qpu_sample_indices.npy",
     ],
     "analysis": ["results/cv_results.json"],
     "benchmark": [
@@ -607,6 +608,7 @@ def _run_evaluate(cfg: Config, dry_run: bool = False) -> None:
         return
     import numpy as np
     from pipeline.evaluate import (
+        bootstrap_ci,
         compute_all_metrics,
         find_best_threshold,
         plot_confidence_distribution,
@@ -691,6 +693,27 @@ def _run_evaluate(cfg: Config, dry_run: bool = False) -> None:
 
     save_results(cfg, metrics, probs_dict, params_dict, history_dict)
 
+    # Bootstrap 95% CIs (B=1000, SEED=6) on the held-out test set.
+    try:
+        ci_output: dict[str, Any] = {
+            "n_bootstrap": cfg.n_bootstrap,
+            "seed": cfg.seed,
+            "ci": {},
+        }
+        for name, test_probs in test_probs_by_model.items():
+            ci = bootstrap_ci(test_probs, y_test, n_bootstrap=cfg.n_bootstrap, seed=cfg.seed)
+            ci_output["ci"][name] = {
+                k: [round(v[0], 4), round(v[1], 4)] for k, v in ci.items()
+            }
+            print(f"  evaluate: {name} bootstrap 95% CI — "
+                  f"AUC=({ci['roc_auc'][0]:.4f}, {ci['roc_auc'][1]:.4f})")
+        ci_path = results_dir / "bootstrap_ci.json"
+        with open(ci_path, "w", encoding="utf-8") as f:
+            json.dump(ci_output, f, indent=2)
+        print(f"  ✓ evaluate: bootstrap CIs → {ci_path}")
+    except Exception as exc:  # noqa: BLE001 — CIs are best-effort
+        print(f"  ⚠ evaluate: bootstrap CI failed: {exc}")
+
     # Figures.
     figures_dir = Path(cfg.figures_dir)
     try:
@@ -722,13 +745,39 @@ def _run_evaluate(cfg: Config, dry_run: bool = False) -> None:
     print(f"  ✓ evaluate: metrics saved to {results_dir}/")
 
 
+def _run_qpu_evaluate(cfg: Config, circuit_qnode, params, X_test, y_test) -> dict:
+    """Select a class-balanced QPU subset, persist its indices, and evaluate.
+
+    The test split is label-sorted (all negatives first), so a naive
+    ``X_test[:n]`` slice evaluates a single class and leaves AUC/sensitivity
+    undefined. ``select_qpu_subset`` draws a stratified, seeded subset and
+    returns the original row indices, which are persisted so the
+    job → sample mapping can always be reconstructed afterwards.
+    """
+    import numpy as np
+    from pipeline.qpu import qpu_evaluate, select_qpu_subset
+
+    X_sub, y_sub, idx = select_qpu_subset(
+        X_test, y_test, cfg.n_qpu_samples, seed=cfg.seed
+    )
+    n_pos = int(np.sum(y_sub == 1))
+    n_neg = int(np.sum(y_sub == 0))
+    results_dir = Path(cfg.results_dir)
+    results_dir.mkdir(parents=True, exist_ok=True)
+    np.save(results_dir / "qpu_sample_indices.npy", np.asarray(idx, dtype=np.int64))
+    print(
+        f"  → qpu: subset n={len(idx):d} ({n_pos} pos / {n_neg} neg), "
+        f"indices → results/qpu_sample_indices.npy"
+    )
+    return qpu_evaluate(cfg, circuit_qnode, params, X_sub, y_sub)
+
+
 def _run_qpu(cfg: Config, dry_run: bool = False) -> None:
     """Dispatch the ``qpu`` stage: hardware evaluation (best-effort)."""
     if dry_run:
         print(f"  → qpu: would run hardware eval → {_STAGE_ARTIFACTS['qpu']}")
         return
     import numpy as np
-    from pipeline.qpu import qpu_evaluate
 
     vae = _load_vae_features(cfg)
     X_test, y_test = vae["X_test"], vae["y_test"]
@@ -753,7 +802,7 @@ def _run_qpu(cfg: Config, dry_run: bool = False) -> None:
         print(f"  ⚠ qpu: failed to build circuit: {exc}")
         return
 
-    result = qpu_evaluate(cfg, circuit_qnode, params, X_test, y_test)
+    result = _run_qpu_evaluate(cfg, circuit_qnode, params, X_test, y_test)
     if result.get("warnings"):
         for w in result["warnings"]:
             print(f"  ⚠ qpu: {w}")
@@ -886,6 +935,8 @@ def _benchmark_mcnemar(preds_a, preds_b, labels) -> tuple[float, float | None, s
         ``(p_value, stat, method)`` — ``stat`` is ``None`` for the exact
         test and the chi2 statistic for the approximation.
     """
+    import numpy as np
+
     preds_a = np.asarray(preds_a)
     preds_b = np.asarray(preds_b)
     labels = np.asarray(labels)

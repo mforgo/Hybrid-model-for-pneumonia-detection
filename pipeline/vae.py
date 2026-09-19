@@ -469,8 +469,8 @@ def fit_vae_pipeline(
       classified with soft labels (supervised mode only).
 
     Cache contract (Data Flow / Cache Artifacts): artifacts are saved as
-    ``{prefix}_vae_{split}.npy``, ``{prefix}_vae_scaler.pkl``,
-    ``{prefix}_vae_weights.pt`` and ``{prefix}_vae_meta.json`` under
+    ``{prefix}vae_{split}.npy``, ``{prefix}vae_scaler.pkl``,
+    ``{prefix}vae_weights.pt`` and ``{prefix}vae_meta.json`` under
     ``save_dir`` (with ``prefix=""`` these are exactly ``vae_train.npy``,
     ``vae_scaler.pkl``, ...). ``vae_meta.json`` stores ``config_hash``,
     ``feat_hash``, ``git_sha`` and ``timestamp``; when the config hash and
@@ -568,12 +568,12 @@ def fit_vae_pipeline(
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # --- cache validation (config hash + feature hash + all files present) ---
-    meta_path = save_dir / f"{prefix}_vae_meta.json"
-    train_path = save_dir / f"{prefix}_vae_train.npy"
-    val_path = save_dir / f"{prefix}_vae_val.npy"
-    test_path = save_dir / f"{prefix}_vae_test.npy"
-    scaler_path = save_dir / f"{prefix}_vae_scaler.pkl"
-    weights_path = save_dir / f"{prefix}_vae_weights.pt"
+    meta_path = save_dir / f"{prefix}vae_meta.json"
+    train_path = save_dir / f"{prefix}vae_train.npy"
+    val_path = save_dir / f"{prefix}vae_val.npy"
+    test_path = save_dir / f"{prefix}vae_test.npy"
+    scaler_path = save_dir / f"{prefix}vae_scaler.pkl"
+    weights_path = save_dir / f"{prefix}vae_weights.pt"
 
     config_h = _config_hash(cfg)
     feat_h = _feat_hash(X_train)

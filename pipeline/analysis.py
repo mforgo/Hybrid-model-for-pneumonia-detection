@@ -426,7 +426,9 @@ def sota_comparison_table() -> Any:
             with open(results_csv, newline="", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    name = str(row.get("", "") or row.get("Model", "")).lower()
+                    name = str(
+                        row.get("model") or row.get("Model") or row.get("", "") or ""
+                    ).lower()
                     auc_raw = row.get("AUC-ROC") or row.get("AUC") or row.get("roc_auc")
                     if "vqc" in name and auc_raw:
                         aucs[4] = float(auc_raw)
