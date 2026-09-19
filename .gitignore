@@ -40,7 +40,13 @@ results/*.npy
 results/*.json
 results/*.csv
 results/*.pt
+results/_stale_backup/
 artifacts/features/*.npy
 .pytest_cache/
 *.egg-info/
 .venv/
+
+# Poster scratch artifacts (local only, never committed)
+aaa.svg
+media.ipynb
+miami_this_week_workloads.csv
