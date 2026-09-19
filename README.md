@@ -194,40 +194,40 @@ The notebook uses PennyLane's `lightning.qubit` backend (falls back from `lightn
 
 ### 7.1 Classical vs hybrid performance
 
-On the 624‑image test set (62.5 % pneumonia, 37.5 % normal), the following metrics were obtained:
+On the 624‑image test set (62.5 % pneumonia, 37.5 % normal) with the **patient‑grouped split** (4243 train / 989 val / 624 test — no patient leakage), the following metrics were obtained:
 
-| Metric             | Classical (ConvNeXt‑Tiny + MLP) | Hybrid (ConvNeXt‑Tiny + VQC) | Difference |
-|--------------------|--------------------------------|------------------------------|-----------|
-| Accuracy           | 82.53 %                        | 81.25 %                      | −1.28 %   |
-| Precision          | 78.27 %                        | 77.03 %                      | −1.24 %   |
-| Recall (Sensitivity) | 99.74 %                      | 99.74 %                      | 0.00 %    |
-| Specificity        | 53.85 %                        | 50.43 %                      | −3.42 %   |
-| F1‑score           | 0.8771                         | 0.8693                       | −0.0078   |
-| AUC‑ROC (val)      | 0.991                          | **0.969**                    | —         |
-| AUC‑ROC (test)     | 0.940                          | 0.860                        | −0.080    |
-| Trainable params (classifier) | 2,113                | **62**                       | −2,051    |
-| Training time      | ~7 epochs (early stop)        | 7 epochs (early stop)         | —         |
+| Metric                  | Classical (ConvNeXt‑Tiny + MLP) | Hybrid (ConvNeXt‑Tiny + VQC) | Difference |
+|-------------------------|--------------------------------|------------------------------|-----------|
+| Accuracy                | 74.20 %                        | 74.84 %                      | +0.64 %   |
+| Balanced accuracy       | 72.95 %                        | 74.66 %                      | +1.71 %   |
+| Precision               | 80.21 %                        | 82.82 %                      | +2.61 %   |
+| Recall (Sensitivity)    | 77.95 %                        | 75.38 %                      | −2.57 %   |
+| Specificity             | 67.95 %                        | 73.93 %                      | +5.98 %   |
+| F1‑score                | 0.7906                         | 0.7893                       | −0.0013   |
+| AUC‑ROC (test)          | 0.8476                         | 0.8055                       | −0.0421   |
+| Trainable params (classifier) | 2,113                     | **62**                       | −2,051    |
+| Training time           | 50 epochs / 11 s (GPU)         | 46 epochs / 9 589 s (CPU)    | —         |
 
 **Optimal thresholds** (selected on validation set using Balanced Accuracy):
-- MLP: τ = 0.30
-- VQC: τ = 0.35
+- MLP: τ = 0.525
+- VQC: τ = 0.800
 
-The hybrid model achieves **96.9 % AUC on validation** and **86.0 % AUC on test**, with **34× fewer trainable parameters** (62 vs. 2,113), which demonstrates extreme parameter efficiency in the NISQ regime.
+The hybrid model achieves **AUC 0.806 on the test set** (MLP: 0.848) with **34× fewer trainable parameters** (62 vs. 2,113). The difference is not statistically significant (§7.2), demonstrating extreme parameter efficiency in the NISQ regime.
 
 ### 7.2 Statistical evaluation
 
 To rigorously compare the models, the following statistical analyses were performed:
 
-1. **Bootstrap 95% Confidence Intervals (B=1000)**: Non‑parametric resampling to estimate uncertainty in AUC and Accuracy.
-2. **McNemar's Test**: Paired statistical test for comparing two classifiers on the same test set. Focuses on samples where predictions differ.
-3. **5‑Fold Stratified Cross‑Validation**: Additional validation on train+val data to ensure robustness.
+1. **Bootstrap 95% Confidence Intervals (B=1000, SEED=6)**: Non‑parametric resampling of the held‑out test set. AUC‑ROC: MLP (0.818, 0.877), VQC (0.766, 0.844). Accuracy at τ=0.5: MLP (0.715, 0.780), VQC (0.660, 0.732).
+2. **McNemar's Test** (exact, benchmark protocol — each model retrained from scratch using its own validation‑selected threshold): MLP vs VQC → **p = 0.7122** — not significant at α=0.05.
+3. **5‑Fold Stratified Cross‑Validation** (10 epochs/fold, VAE features): VQC mean AUC = 0.630 ± 0.027, MLP mean AUC = 0.812 ± 0.011.
 
-Results show the accuracy difference (1.28 percentage points) is **not statistically significant** at α=0.05 level via McNemar's test, validating the hypothesis that VQC achieves comparable performance.
+The bootstrap intervals overlap and McNemar's test is not significant (p = 0.712), validating the hypothesis that the VQC achieves statistically comparable performance with 34× fewer parameters.
 
 ### 7.3 Expressivity and entangling capability
 
 The data re‑uploading ansatz with L=3 was selected based on:
-- **Expressivity analysis**: KL divergence vs. Haar measure shows L=3 captures sufficient state diversity without barren plateaus.
+- **Expressivity analysis**: KL divergence vs. Haar measure shows L=3 captures sufficient state diversity (measured Expr(A) = 0.0221, Ent(A) = 0.9548).
 - L=1,2: too "rigid" (under‑parameterized)
 - L=4+: marginal expressivity gain, higher hardware noise susceptibility
 
@@ -235,10 +235,10 @@ This justifies the choice of **62 parameters** (54 rotation + 6 scale + 2 measur
 
 ### 7.4 Behaviour and interpretation
 
-- The hybrid model shows very high **sensitivity (99.7 %)** with moderate specificity (50.4 %), meaning it correctly identifies nearly all pneumonia cases while having a higher false positive rate than the classical baseline.
-- The gap between validation AUC (96.9 %) and test AUC (86.0 %) suggests some overfitting and domain shift.
-- A noticeable **dataset shift** (pneumonia: 74.2% → 62.5%) between train and test distributions contributes to the performance gap.
-- The VQC training stopped early at **epoch 7** (patience = 3), indicating the model converged quickly but did not generalize as well as the MLP.
+- The VQC achieves balanced **sensitivity (75.4 %) / specificity (73.9 %)** at τ=0.80; the MLP trades off differently: **sensitivity (78.0 %) / specificity (68.0 %)** at τ=0.525. The VQC is more conservative (fewer false positives, more missed cases).
+- Test AUC: VQC **0.806**, MLP **0.848**, indicating the models generalise well to the balanced test set.
+- A **dataset shift** (pneumonia: 74.2 % → 62.5 %) between train and test distributions exists. DANN partially mitigates but does not eliminate this shift.
+- The VQC trains on CPU (46 epochs, 9,589 s on lightning.qubit with adjoint differentiation), while the MLP trains on GPU (50 epochs, 11 s) — an ~860× time cost reflecting the quantum simulator overhead.
 
 ***
 
@@ -248,9 +248,9 @@ This justifies the choice of **62 parameters** (54 rotation + 6 scale + 2 measur
 
 The thesis acknowledges the following limitations:
 
-1. **Training constraints**: VQC converged after only 7 epochs with early stopping (patience = 3), limiting achievable performance on the simulator.
+1. **Training constraints**: VQC training on the ideal simulator takes ~2.7 h per run (46 epochs with patience = 10). Limited to 6 qubits (62 parameters), the re‑uploading path covers only 6 of 64 latent dimensions per layer — the remaining 58 components enter exclusively via amplitude embedding.
 2. **Single dataset**: Only one public pediatric dataset from one institution (Guangzhou Women and Children's Medical Center). Generalization to other populations, hospitals, or acquisition protocols is unknown.
-3. **No hardware testing**: The quantum model was trained on an **ideal simulator** without realistic NISQ noise. Performance on real quantum hardware would likely be worse without explicit error‑mitigation (ZNE, PEC).
+3. **Hardware evaluation limited by noise and a degenerate slice**: A real‑hardware run was performed on IBM Quantum (`ibm_miami`, 79 jobs, September 2026) but evaluated a label‑sorted all‑negative test slice (now fixed via `select_qpu_subset` with stratified, class‑balanced sampling). The raw hardware output was noise‑saturated: the sim‑to‑QPU probability span collapsed ~52%, yielding near‑coin‑flip accuracy. The run therefore provides no reliable on‑device accuracy estimate and is reported only as a supporting data point in the poster.
 4. **Dataset shift**: The 11.7 percentage point shift (74.2% → 62.5% pneumonia) between train and test is significant. DANN partially mitigates but does not eliminate this.
 5. **Autoencoder information loss**: While nonlinear autoencoder preserves more information than linear PCA, dimension reduction from 768→64 still discards some discriminative signal.
 6. **ViT incompatibility**: Initial experiments showed ViT‑B/16 features were incompatible with the VQC (failed to learn, AUC ≈ 0.46). Only ConvNeXt‑Tiny features worked.
