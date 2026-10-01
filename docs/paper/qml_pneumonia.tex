@@ -9,25 +9,45 @@
 \usepackage{caption}
 \usepackage{enumitem}
 \usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta}
+
+% Prose paragraphs in this document contain long chemical/technical
+% compounds; allow a little extra horizontal stretch rather than letting
+% TeX push those words into the margin.
+\setlength{\emergencystretch}{3em}
 
 % ---------------------------------------------------------------
-%  Placeholder styling for the forthcoming hardware section
+%  Figure handling.  Assets are version-controlled outside the
+%  paper directory, so they are resolved relative to the
+%  repository root.  The existence probe is given the same
+%  directory prefix explicitly, because \IfFileExists does not
+%  search \graphicspath; without the prefix the probe fails and
+%  every figure silently degrades to a labelled slot.
 % ---------------------------------------------------------------
-\newcommand{\hwplaceholder}[1]{%
-  \begin{center}
-    \colorbox{gray!15}{\parbox{0.92\textwidth}{%
-      \vspace{0.5em}
-      {\color{gray!60!black}\textbf{[PLACEHOLDER --- to be completed with real-hardware results]}}\\[4pt]
-      {\color{gray!55!black}#1}
-      \vspace{0.4em}
-    }}
-  \end{center}
+\graphicspath{{../../media/}{../../results/figures/}{../media/}{../results/figures/}}
+\newcommand{\figdir}{../../media/}
+\newcommand{\figasset}[3]{%
+  \IfFileExists{\figdir #1}{%
+    \includegraphics[width=#2]{\figdir #1}%
+  }{%
+    \fbox{\parbox[c][3.2cm][c]{#2}{\centering\small\itshape Figure unavailable: #3}}%
+  }%
 }
 
 \title{Quantum Machine Learning for Pneumonia Detection in\\
 Chest X-Ray Imaging: an Illustrative Case Study}
 
-\author{Author names\\[2pt] \small Affiliation to be inserted}
+\author{%
+  Michal Forg\'o$^{1}$\thanks{Corresponding author:
+  \texttt{mforgo@ntc.zcu.cz}}\quad
+  V\'it Nov\'a\v{c}ek$^{1}$\quad
+  Ji\v{r}\'i Vala$^{2}$\quad
+  Eddie Kelly$^{2}$\\[7pt]
+  \small $^{1}$New Technologies Research Centre (NTC),
+  University of West Bohemia, Pilsen, Czech Republic\\
+  \small $^{2}$Maynooth University, Maynooth, Ireland
+}
 
 \date{}
 
@@ -57,22 +77,32 @@ convolutional ansatz design, quantum kernel construction, and the
 barren-plateau phenomenon that limits the trainability of deep parametrized
 circuits together with its principal mitigation strategies.  As a concrete
 illustration, we describe and analyze a hybrid pipeline that couples a frozen
-ConvNeXt-Tiny feature extractor with nonlinear autoencoder dimensionality
-reduction (768$\rightarrow$64) and a 6-qubit, 62-parameter data re-uploading
-VQC classifier, evaluated on a publicly available pediatric CXR dataset under
-an explicit train/test class-prevalence shift.  The hybrid model attains a
-test AUC-ROC of 0.860 (versus 0.940 for a classical multilayer perceptron
-trained on identical features) while using approximately $34\times$ fewer
-trainable parameters in its decision layer (62 versus 2{,}113).  We situate
-this case study within a broader survey of
-related hybrid approaches for respiratory and cardiac CXR analysis reported
-in the literature, and ground a discussion of the algorithmic trade-offs,
-evaluation methodology, and open problems---including state-preparation
-overhead, barren plateaus, dataset shift, and the absence, at present circuit
-scales, of a demonstrated computational quantum advantage.  A dedicated
-section is reserved for forthcoming experiments on physical quantum hardware
-with error mitigation; its completion will allow direct quantification of the
-simulator-to-hardware performance gap.
+ConvNeXt-Tiny feature extractor with domain-adversarial representation learning
+and nonlinear autoencoder dimensionality reduction (768$\rightarrow$64) feeding
+a 6-qubit, 62-parameter data re-uploading VQC classifier, evaluated on a
+publicly available pediatric CXR dataset under an explicit train/test
+class-prevalence shift.  On a patient-disjoint held-out test set of 624 images,
+the hybrid model attains a test balanced accuracy of 0.747 and a test AUC-ROC
+of 0.806, against 0.729 and 0.848 for a classical multilayer perceptron
+trained on identical features---a difference that is not statistically
+significant (McNemar's exact test, $p = 0.71$)---while using approximately
+$34\times$ fewer trainable parameters in its decision layer (62 versus
+2{,}113).  We situate this case study within a broader survey of related
+hybrid approaches for respiratory and cardiac CXR analysis reported in the
+literature, and ground a discussion of the algorithmic trade-offs, evaluation
+methodology, and open problems---including state-preparation overhead, barren
+plateaus, dataset shift, and the absence, at present circuit scales, of a
+demonstrated computational quantum advantage.  Finally, we report the
+execution of the trained circuit on a physical IBM~Quantum processor and
+quantify the simulator-to-hardware gap.  On a class-balanced subset, hardware
+noise compresses the span of the predicted pneumonia probability by
+59\% relative to the noise-free statevector simulator (0.439 $\rightarrow$
+0.182); we attribute this primarily to the 62 two-qubit gates required for
+amplitude-encoding state preparation rather than to the 18 gates of the learned
+ansatz, which accounts for under a quarter of the circuit's two-qubit budget.
+Zero-noise extrapolation restores the distributional span but not the
+sample-level agreement with the simulator, indicating that error mitigation at
+this circuit scale mitigates variance at the cost of additional bias.
 \end{abstract}
 
 \noindent\textbf{Keywords:} quantum machine learning; variational quantum
@@ -145,7 +175,7 @@ quantum computing \cite{sharma2023survey}.
 
 \subsection{Contributions and Scope}
 
-This paper has two purposes.  First, it provides a structured,
+This paper has three purposes.  First, it provides a structured,
 computationally oriented review of the building blocks required to construct
 hybrid quantum--classical pneumonia classifiers: classical CNN backbones,
 dimensionality reduction, quantum data-encoding strategies, variational and
@@ -153,9 +183,12 @@ convolutional ansatz design, quantum kernel construction, and the
 barren-plateau problem including its principal mitigation strategies.  Second,
 it presents a detailed case study---a ConvNeXt-Tiny/autoencoder/VQC pipeline
 evaluated on a public pediatric CXR dataset---that grounds the algorithmic
-discussion
-with explicit numbers and illustrates the current gap between classical and
-quantum-assisted approaches.
+discussion with explicit numbers and illustrates the current gap between
+classical and quantum-assisted approaches.  Third, it closes the
+simulator-to-hardware loop that most simulation-only studies leave open, by
+executing the trained circuit on a physical IBM~Quantum processor and reporting
+the resulting degradation quantitatively, together with a gate-level
+attribution of its cause.
 
 The clinical and radiological background is kept intentionally brief; the
 emphasis throughout is on encoding schemes, circuit design, trainability,
@@ -164,11 +197,7 @@ computer-science- and quantum-technology-oriented readership.  We deliberately
 avoid overstating the clinical readiness of the reviewed methods: at the qubit
 counts considered here, no computational quantum advantage is established, and
 the results should be interpreted as a feasibility and parameter-efficiency
-study rather than as a validated diagnostic tool.  A separate section
-(Section~\ref{sec:hardware}) is reserved for forthcoming experimental results
-on physical quantum hardware; its inclusion reflects the acknowledged
-importance of closing the simulator-to-hardware gap and will complete the
-empirical contribution of this work.
+study rather than as a validated diagnostic tool.
 
 The remainder of the paper is organized as follows.
 Section~\ref{sec:background} introduces the clinical context and the classical
@@ -178,8 +207,8 @@ Section~\ref{sec:qml} describes quantum data encoding, variational circuits,
 QCNNs, quantum kernels, and the barren-plateau phenomenon.
 Section~\ref{sec:hybrid} surveys related HQC work for CXR analysis and
 presents the ConvNeXt-Tiny/autoencoder/VQC case study.
-Section~\ref{sec:hardware}
-provides the placeholder for real-hardware experiments.
+Section~\ref{sec:hardware} reports the physical-hardware execution and
+quantifies the simulator-to-hardware gap.
 Section~\ref{sec:eval} discusses experimental design and evaluation metrics.
 Section~\ref{sec:limitations} enumerates open problems and limitations.
 Section~\ref{sec:future} outlines future research directions, and
@@ -621,11 +650,12 @@ chest X-ray analysis.  Three themes emerge from this survey.
 \small
 \caption{Representative hybrid quantum--classical studies on CXR or pulmonary
   imaging tasks.  All results are from noise-free simulators unless marked
-  with $\dagger$ (IBM~Q backend).  ``HQC-VQC'' denotes a classical feature
-  extractor followed by a VQC classifier head; ``HQC-Conv'' denotes a
+  with $\dagger$ (IBM~Q backend) or $\ddagger$ (this work additionally reports
+  execution on physical quantum hardware).  ``HQC-VQC'' denotes a classical
+  feature extractor followed by a VQC classifier head; ``HQC-Conv'' denotes a
   quanvolutional or QCNN layer integrated into the CNN pipeline.}
 \label{tab:related}
-\begin{tabular}{@{}p{3.5cm}p{2.0cm}p{2.0cm}p{1.3cm}p{4.0cm}@{}}
+\begin{tabular}{@{}p{2.8cm}p{2.0cm}p{2.0cm}p{2.2cm}p{4.0cm}@{}}
 \toprule
 Reference & Architecture & Dataset & Task & Key result \\
 \midrule
@@ -634,7 +664,7 @@ Rao et al.~\cite{rao2024} & HQC-VQC ($\dagger$) & COVID-19 Radiography Dataset (
 Decoodt et al.~\cite{decoodt2023} & HQC-VQC & CheXpert (2.4K PA) & Cardiomegaly & AUC $\leq 0.93$; improved Grad-CAM++ localization \\
 Sharma~\cite{sharmaR2023hybrid} & HQC-Conv & Custom CXR & Pneumonia & ZFNet + quantum layer hybrid \\
 Khatoniar et al.~\cite{khatoniar2024} & QCNN & CXR (Guangzhou) & Pneumonia & Robustness analysis under extreme feature reduction \\
-\textbf{This work} & HQC-VQC & CXR (Guangzhou, 5.8K) & Pneumonia & AUC 0.860 (VQC) vs.\ 0.940 (MLP); $34\times$ param.\ reduction \\
+\textbf{This work} & HQC-VQC ($\ddagger$) & CXR (Guangzhou, 5.9K) & Pneumonia & Bal.\ accuracy 0.747 (VQC) vs.\ 0.729 (MLP), $p=0.71$; $34\times$ param.\ reduction; on-device noise study \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -654,12 +684,14 @@ test set is rarely reported explicitly.  This limits direct cross-study
 comparison and motivates the shift-aware evaluation framework presented in
 Section~\ref{sec:eval}.
 
-\paragraph{Limited hardware deployment.}
-Only Rao et al.~\cite{rao2024} report partial deployment on a real IBM~Q backend
-(QASM simulator), and no study provides a systematic comparison of
-simulator versus hardware performance under noise.  The gap between
-simulator and hardware results---which Section~\ref{sec:hardware} is designed
-to quantify---remains the most critical open empirical question in the field.
+\paragraph{Hardware deployment and the missing simulator--hardware comparison.}
+Among the surveyed studies, only Rao et al.~\cite{rao2024} report deployment on
+an IBM~Q backend, and that deployment targets a QASM simulator rather than
+physical qubits; none quantifies the gap between noise-free simulation and
+hardware execution for the same trained circuit.  Section~\ref{sec:hardware}
+addresses this gap directly for the pipeline of Section~\ref{sec:hybrid},
+reporting both the magnitude of the hardware-induced degradation and a
+gate-level attribution of its cause.
 
 \subsection{Pipeline Architecture}
 
@@ -687,9 +719,10 @@ is revisited in Section~\ref{sec:limitations}.
 
 \begin{table}[htbp]
 \centering
+\small
 \caption{Hybrid pipeline architecture and parameter counts.}
 \label{tab:pipeline}
-\begin{tabular}{@{}lllll@{}}
+\begin{tabular}{@{}p{2.9cm}p{2.2cm}p{3.5cm}p{2.2cm}p{2.1cm}@{}}
 \toprule
 Stage & Input & Operation & Output & Parameters \\
 \midrule
@@ -711,14 +744,47 @@ projection used in earlier variants of this pipeline.
 
 \begin{figure}[htbp]
 \centering
-\fbox{\parbox{0.85\textwidth}{\centering \vspace{1.2em}
-\textbf{[Figure placeholder]} \\[4pt]
-Chest X-ray $224\times224$ \;$\rightarrow$\; ConvNeXt-Tiny (headless)
-\;$\rightarrow$\; 768-D features \;$\rightarrow$\; DANN/GRL \;$\rightarrow$\;
-Autoencoder ($768\rightarrow64$) \;$\rightarrow$\;
-6-qubit VQC (62 params) \;$\rightarrow$\; $P(\text{pneumonia})$
-\vspace{1.2em}}}
-\caption{Schematic of the hybrid CNN--autoencoder--VQC pipeline.}
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\footnotesize,
+  stage/.style={draw, rounded corners=2pt, align=center,
+                minimum height=12mm, inner xsep=4pt},
+  classical/.style={stage, fill=blue!6, draw=blue!45!black},
+  quantum/.style={stage, fill=orange!16, draw=orange!60!black},
+  flow/.style={-{Stealth[length=2.2mm]}, thick},
+  tag/.style={font=\scriptsize\itshape, text=black!62, inner sep=1pt}
+]
+\node[classical] (img) {CXR\\$224{\times}224$};
+\node[classical, right=5mm of img] (cnn) {ConvNeXt-Tiny\\frozen, headless};
+\node[classical, right=5mm of cnn] (dann) {DANN\\+ gradient reversal};
+\node[classical, right=5mm of dann] (ae) {Autoencoder\\nonlinear};
+\node[quantum, right=5mm of ae] (vqc) {VQC\\6 qubits, $L{=}3$};
+\node[quantum, right=5mm of vqc] (pq) {$P(\text{pneumonia})$\\from $\langle Z_0\rangle$};
+\node[classical, below=9mm of ae] (mlp) {MLP\\$64{\to}32{\to}1$};
+\node[classical, right=5mm of mlp] (pm) {$P(\text{pneumonia})$\\sigmoid output};
+
+\draw[flow] (img) -- node[tag, above] {RGB} (cnn);
+\draw[flow] (cnn) -- node[tag, above] {768-D} (dann);
+\draw[flow] (dann) -- node[tag, above] {768-D} (ae);
+\draw[flow] (ae) -- node[tag, above] {64-D, $L_2$-norm.} (vqc);
+\draw[flow] (vqc) -- node[tag, above] {$\sigma(\langle Z_0\rangle)$} (pq);
+\draw[flow] (ae) -- node[tag, right] {} (mlp);
+\draw[flow] (mlp) -- (pm);
+
+\node[tag, below=1mm of cnn, align=center] {0 trainable\\params};
+\node[tag, below=1mm of dann, align=center] {0 trainable\\params};
+\node[tag, below=1mm of vqc, align=center, text=orange!50!black] {\textbf{62} trainable\\params};
+\node[tag, below=1mm of mlp, align=center, text=blue!45!black] {\textbf{2{,}113} trainable\\params};
+\end{tikzpicture}}
+\caption{Schematic of the hybrid pipeline.  A frozen ConvNeXt-Tiny embeds each
+  $224{\times}224$ radiograph into a 768-dimensional vector; a
+  domain-adversarial stage with a gradient reversal layer suppresses the
+  train/test distribution shift, and a nonlinear autoencoder compresses the
+  embedding to 64 dimensions.  The compressed vector is then classified either
+  by the 6-qubit, 62-parameter data re-uploading VQC (upper branch, this work)
+  or by the 2{,}113-parameter MLP baseline (lower branch), both operating on
+  identical features.  The 64-dimensional latent is chosen to match the
+  Hilbert-space dimension of a 6-qubit register ($2^6 = 64$).}
 \label{fig:pipeline}
 \end{figure}
 
@@ -726,28 +792,32 @@ Autoencoder ($768\rightarrow64$) \;$\rightarrow$\;
 
 The pipeline was evaluated on the publicly available pediatric CXR pneumonia
 dataset originating from the Guangzhou Women and Children's Medical Center
-(5,856 anteroposterior CXR images, ages approximately 1--5 years).  The
+(5{,}856 anteroposterior CXR images, ages approximately 1--5 years).  The
 original release provides a validation split of only 16 images, which is
 insufficient for reliable convergence monitoring; the training and validation
-partitions were therefore merged and re-split 80:20 with class stratification,
-while the original test partition was left untouched to preserve the integrity
-of the final evaluation.  The resulting split is summarized in
-Table~\ref{tab:dataset}.  Notably, the test set exhibits a materially different
-class prevalence (62.5\% pneumonia) than the training and validation sets
-(74.2\% pneumonia), constituting an explicit, quantified dataset shift that is
-exploited below as a robustness stress test rather than concealed.
+partitions were therefore merged and re-split 80:20 with class stratification
+using a \emph{patient-grouped} shuffle, so that no patient contributes images
+to both sides of the split, while the original test partition was left
+untouched to preserve the integrity of the final evaluation.  The resulting
+split is summarized in Table~\ref{tab:dataset}.  Notably, the test set exhibits
+a materially different class prevalence (62.5\% pneumonia) than the training
+and validation sets (74.4\% and 73.3\% respectively), constituting an explicit,
+quantified dataset shift of roughly 11 percentage points that is exploited
+below as a robustness stress test rather than concealed.
 
 \begin{table}[htbp]
 \centering
-\caption{Dataset composition and class-prevalence shift.}
+\caption{Dataset composition and class-prevalence shift.  The train/validation
+  re-split is patient-grouped; the test partition is the original,
+  patient-disjoint split, unmodified.}
 \label{tab:dataset}
 \begin{tabular}{@{}lrrr@{}}
 \toprule
 Split & Images & Pneumonia (\%) & Normal (\%) \\
 \midrule
-Training   & 4{,}185 & 74.2 & 25.8 \\
-Validation & 1{,}047 & 74.2 & 25.8 \\
-Test       &   624   & 62.5 & 37.5 \\
+Training   & 4{,}243 & 74.4 & 25.6 \\
+Validation &   989 & 73.3 & 26.7 \\
+Test       &   624 & 62.5 & 37.5 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -797,123 +867,330 @@ cosine annealing,
 \end{equation}
 with $\eta_0 = 10^{-3}$ and $\eta_{\min} = 10^{-5}$, while the classical
 baseline used unmodified cosine annealing.  Gradient computation for the
-quantum circuit used the adjoint differentiation method on the simulator,
-which is dramatically faster than the parameter-shift rule and requires no
-additional circuit executions beyond the forward pass.  All quantum-circuit
-simulation was performed on a GPU-accelerated statevector simulator
-(noise-free), so the reported results characterize the idealized,
-decoherence-free behavior of the ansatz rather than performance on physical
-NISQ hardware.  In practice both models converged well before the 50-epoch
-budget (early stopping triggered at approximately 7--10 epochs).
+quantum circuit used the adjoint differentiation method
+\cite{mitarai2018}, which recovers the gradient of a scalar observable from
+cached forward executions at a cost scaling linearly in the number of
+trainable parameters, and which is roughly two orders of magnitude faster than
+the parameter-shift rule on the statevector simulator used here; the
+parameter-shift rule remains the appropriate choice when targeting physical
+hardware, where execution caching is unavailable.  All quantum-circuit
+training and classical simulation reported in this section was performed on a
+noise-free statevector simulator, so the results characterize the idealized,
+decoherence-free behavior of the ansatz; Section~\ref{sec:hardware} reports the
+corresponding physical-hardware behavior separately.  In practice both models
+converged well before the 50-epoch budget under early stopping.
 
 \subsection{Results}
 
 Table~\ref{tab:results} summarizes test-set performance for the classical
 baseline and the hybrid VQC classifier at the validation-selected decision
-thresholds (Section~\ref{sec:threshold}): $\tau=0.30$ for the MLP and
-$\tau=0.35$ for the VQC.  Both thresholds were selected to maximize balanced
-accuracy on the validation set only, and applied once to the test set.
+thresholds (Section~\ref{sec:threshold}): $\tau^\star = 0.525$ for the MLP and
+$\tau^\star = 0.800$ for the VQC.  Both thresholds were selected to maximize
+balanced accuracy on the validation set only, and applied once to the test
+set.  Both models see identical features from an identical, patient-disjoint
+split, so the comparison isolates the effect of the decision layer.
 
 \begin{table}[htbp]
 \centering
 \caption{Test-set diagnostic performance: classical MLP baseline vs.\ hybrid
   VQC classifier (624 test images, 62.5\% pneumonia prevalence).  Thresholds
-  $\tau$ were selected on the validation set via balanced-accuracy
+  $\tau^\star$ were selected on the validation set via balanced-accuracy
   maximization and applied once to the test set.}
 \label{tab:results}
 \begin{tabular}{@{}lrr@{}}
 \toprule
 Metric & Classical (MLP) & Hybrid (VQC) \\
 \midrule
-Accuracy              & 82.53\% & 81.25\% \\
-Precision             & 78.27\% & 77.03\% \\
-Sensitivity (Recall)  & 99.74\% & 99.74\% \\
-Specificity           & 53.85\% & 50.43\% \\
-$F_1$-score           & 0.8771  & 0.8693 \\
-AUC-ROC (test)        & 0.940   & 0.860  \\
-Balanced accuracy     & 0.7679  & 0.7509 \\
+Accuracy              & 74.20\% & 74.84\% \\
+Balanced accuracy     & 0.7295  & 0.7466  \\
+Precision             & 80.21\% & 82.82\% \\
+Sensitivity (Recall)  & 77.95\% & 75.38\% \\
+Specificity           & 67.95\% & 73.93\% \\
+$F_1$-score           & 0.7906  & 0.7893  \\
+AUC-ROC (test)        & 0.8476  & 0.8055  \\
 \addlinespace
-Decision threshold $\tau$ & 0.30 & 0.35 \\
+Decision threshold $\tau^\star$ & 0.525 & 0.800 \\
 Decision-layer parameters & 2{,}113 & 62 \\
 Parameter reduction       & \multicolumn{2}{c}{$\approx 34\times$} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The classical baseline outperforms the hybrid quantum classifier on every
-reported metric, consistent with the expectation that a fully connected head
-can better exploit a rich, 64-dimensional continuous representation than a
-shallow, locally entangling 6-qubit circuit.  The gap is nevertheless
-modest---the accuracy difference is 1.28 percentage points and is not
-statistically significant at $\alpha=0.05$ under McNemar's test applied to
-the 624 paired test predictions---so the hybrid model attains essentially
-comparable discriminative performance (test AUC-ROC 0.860) using
-approximately $34\times$ fewer decision-layer parameters (62 versus 2{,}113).
-Both models exhibit a ``cautious screening'' operating profile, with very
-high sensitivity (99.74\%) at the cost of low specificity (50.4--53.9\%),
-which from a purely metric standpoint favors minimizing missed pneumonia
-cases over minimizing false alarms; we emphasize that no clinical validation
-of this trade-off is implied.  The modest specificity is attributable to the
-decision thresholds selected by the balanced-accuracy criterion, which
-deliberately trades specificity for sensitivity in an imbalanced test
-population.
+The two models are statistically indistinguishable but differ in profile.  The
+VQC attains the higher test accuracy (74.84\% versus 74.20\%), the higher
+balanced accuracy (0.7466 versus 0.7295), the higher precision (82.82\% versus
+80.21\%) and substantially the higher specificity (73.93\% versus 67.95\%), at
+the cost of lower sensitivity (75.38\% versus 77.95\%), a marginally lower
+$F_1$-score (0.7893 versus 0.7906), and a lower threshold-independent ranking
+quality (test AUC-ROC 0.8055 versus 0.8476).  An exact McNemar test on the 624
+paired test predictions yields $p = 0.71$, so the accuracy difference is not
+significant at $\alpha = 0.05$; non-parametric bootstrap resampling
+($B = 1000$) likewise returns overlapping $95\%$ confidence intervals for
+AUC-ROC, $[0.818, 0.877]$ for the MLP against $[0.766, 0.844]$ for the VQC.
+We therefore characterize the hybrid model as \emph{comparable} to the
+classical baseline, and explicitly do not claim that it is superior: the MLP
+ranks the test set better, and the VQC's advantage is confined to the
+thresholded operating point selected by the balanced-accuracy criterion.  The
+notable positive result is that this operating point is reached with
+approximately $34\times$ fewer trainable decision-layer parameters.
 
-Compared to the literature surveyed in Table~\ref{tab:related}, the test
-AUC-ROC of 0.860 is lower than the near-perfect figures reported by Rao et
-al.~\cite{rao2024} or Kulkarni et al.~\cite{kulkarni2023}, differences
-that can be attributed to: (i)~the explicit train/test class-prevalence
-shift applied here; (ii)~the single-run evaluation without cross-validation;
-and (iii)~the absence of fine-tuning of the ConvNeXt-Tiny backbone.  These
-factors collectively reduce the upper bound on achievable performance and
-make the comparison more conservative and, arguably, more realistic.
+The two selected thresholds differ sharply ($\tau^\star = 0.525$ against
+$0.800$), which is instructive rather than incidental.  Because
+Equation~\ref{eq:sigmoid_remap} maps $\langle Z_0\rangle$ linearly onto
+$[0,1]$, the VQC's scores are not calibrated against the sigmoid MLP's scores,
+so the two models cannot be thresholded at a common $\tau$ and must instead be
+calibrated separately on the validation set.  The VQC's selected
+$\tau^\star = 0.800$ is a markedly conservative operating point, consistent
+with its higher specificity and lower sensitivity: the circuit concentrates
+its outputs in the upper region of $[0,1]$ and requires a correspondingly high
+cut to balance the two error types.  This calibration mismatch is a practical
+cost of the hybrid design that is easily overlooked when a quantum head is
+treated as a drop-in replacement for a dense layer, and it follows directly
+from fitting the $\{-1,+1\}$-targeted objective of Equation~\ref{eq:qmse} in a
+space that is only afterwards affinely remapped to a probability.
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}{0.485\textwidth}
+\centering
+\figasset{roc_mlp.png}{\linewidth}{ROC curve, classical MLP}
+\par\smallskip
+{\small\textbf{(a)} Classical MLP: AUC-ROC $=0.8476$}
+\end{minipage}\hfill
+\begin{minipage}{0.485\textwidth}
+\centering
+\figasset{roc_vqc.png}{\linewidth}{ROC curve, hybrid VQC}
+\par\smallskip
+{\small\textbf{(b)} Hybrid VQC: AUC-ROC $=0.8055$}
+\end{minipage}
+\caption{Receiver operating characteristic curves for the two decision layers
+  on the 624-image test set, evaluated on identical features.  The MLP attains
+  the higher area under the curve, consistent with the bootstrap intervals of
+  Section~\ref{sec:hybrid} overlapping across $\alpha = 0.05$.}
+\label{fig:roc}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\figasset{confusion_matrices.png}{0.92\textwidth}{Confusion matrices at the validation-selected thresholds}
+\caption{Test-set confusion matrices at the validation-selected thresholds,
+  $\tau^\star = 0.525$ for the MLP (left) and $\tau^\star = 0.800$ for the
+  VQC (right).  Both models err more often by over-flagging normal studies as
+  pneumonia than by missing pneumonia cases, a direct consequence of the
+  prevalence shift documented in Table~\ref{tab:dataset}: both were trained
+  under a roughly 74\% pneumonia prior and are evaluated at 62.5\%.}
+\label{fig:confusion}
+\end{figure}
+
+Compared to the literature surveyed in Table~\ref{tab:related}, the balanced
+accuracies reported here are considerably lower than the near-perfect figures
+reported by Rao et al.~\cite{rao2024} or Kulkarni et al.~\cite{kulkarni2023}.
+We attribute this to: (i)~the explicit train/test class-prevalence shift
+applied here; (ii)~a single-run evaluation without cross-validation;
+(iii)~the absence of fine-tuning of the ConvNeXt-Tiny backbone; and (iv)~the
+deliberately small quantum decision layer, whose 62 parameters limit the
+capacity available to model the 64-dimensional latent space.  These factors
+collectively reduce the upper bound on achievable performance and make the
+comparison more conservative and, arguably, more realistic: the comparison of
+interest in this paper is against a competently trained classical baseline on
+identical features, not against the headline figures of studies using different
+splits, different backbones and, in several reported cases, weaker reference
+classifiers.
 
 % ==============================================================
 \section{Experiments on Real Quantum Hardware}
 \label{sec:hardware}
 % ==============================================================
 
-\hwplaceholder{%
-  This section will report the results of executing the VQC classifier
-  (Section~\ref{sec:hybrid}) on one or more physical NISQ devices (e.g.,
-  IBM~Quantum superconducting processors or trapped-ion platforms).  It will
-  include the following subsections once the experiments are complete.
-}
+This section reports the execution of the trained VQC of
+Section~\ref{sec:hybrid} on physical quantum hardware, and quantifies the
+resulting simulator-to-hardware gap.  We report the outcome as a negative
+result.  On the hardware tested, noise dominates the circuit's output to the
+point where the trained classifier's discriminative behaviour is no longer
+recoverable, and we show by gate accounting that this failure is attributable
+primarily to the state-preparation stage rather than to the learned ansatz.
 
 \subsection{Motivation and Hardware Selection}
 \label{sec:hw_motivation}
 
-\hwplaceholder{%
-  Justification for the choice of hardware platform(s); qubit counts, native
-  gate sets, and typical two-qubit gate error rates of the selected devices;
-  circuit transpilation and optimization strategy (e.g., routing, SWAP
-  insertion, basis-gate decomposition); and the mapping between the 6-qubit
-  VQC ansatz and the device's connectivity graph.
-}
+Experiments were performed on \texttt{ibm\_miami}, a 127-qubit
+superconducting processor accessed through the Qiskit~Runtime
+\texttt{SamplerV2} primitive.  Jobs were deliberately submitted outside an
+execution \emph{session}: sessions bill wall-clock time irrespective of device
+occupancy, which is an inappropriate accounting model for an experiment whose
+queue latency dominates its compute time.  Circuits were transpiled to the
+device's native basis set
+($\{\mathrm{ECR}, \mathrm{RZ}, \mathrm{SX}, \mathrm{X}\}$) at optimization
+level~3, with the 6-qubit ansatz mapped onto a short chain of connected,
+low-error qubits to avoid SWAP insertion.  All circuits were sampled with
+$1{,}024$ shots.  We use this as an integrity check throughout: every
+expectation value recovered from hardware in our logs is an exact multiple of
+$1/1024$, which distinguishes genuine sampled data from simulator output.
+
+The transpiled two-qubit gate accounting of Table~\ref{tab:gatecount} is the
+central diagnostic for interpreting the results.  The asymmetry is severe.  The
+amplitude encoding of Equation~\ref{eq:amplitude} requires $2^6 - 2 = 62$
+CNOT gates under the standard M\"ott\"onen decomposition
+\cite{mottonen2005}, whereas the entire trainable three-layer ansatz
+contributes only $3 \times 6 = 18$.  State preparation therefore accounts for
+roughly 78\% of the circuit's two-qubit gate count---about $3.4\times$ the
+depth of the learned circuit itself.  The trainable parameters constitute
+under a quarter of the executed circuit, which means that parameter-efficient
+ansatz design buys comparatively little on hardware: what dominates the error
+budget is a data-loading routine whose depth grows exponentially with the
+number of encoded amplitudes and which no amount of ansatz tuning can offset.
+
+\begin{table}[htbp]
+\centering
+\caption{Transpiled two-qubit (CNOT) gate budget for the 6-qubit circuit.}
+\label{tab:gatecount}
+\begin{tabular}{@{}lrr@{}}
+\toprule
+Circuit stage & CNOTs & Share \\
+\midrule
+Amplitude encoding (state preparation) & 62 & 77.5\% \\
+Trainable ansatz ($L=3$ data re-uploading) & 18 & 22.5\% \\
+Measurement basis & 0 & 0\% \\
+\midrule
+Total & 80 & 100\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+\centering
+\figasset{vqc_circuit_diagram.png}{\textwidth}{Transpiled circuit diagram}
+\caption{The trained ansatz transpiled to the target device's native gate set
+  at optimization level 3.  The circuit is visually dominated by the
+  amplitude-encoding prefix, consistent with the gate budget of
+  Table~\ref{tab:gatecount}; the trainable layers constitute a small
+  fraction of the total depth.}
+\label{fig:transpiled}
+\end{figure}
 
 \subsection{Error Mitigation Strategies}
 \label{sec:hw_mitigation}
 
-\hwplaceholder{%
-  Description of the error mitigation protocol(s) to be applied:
-  readout-error calibration, zero-noise extrapolation (ZNE), probabilistic
-  error cancellation (PEC), or dynamical decoupling (DD).  Discussion of
-  encoding-dependent mitigation effectiveness in light of the comparative
-  literature \cite{qkernel2022,haug2021}, and the expected trade-off between
-  mitigation overhead (additional circuit executions) and performance gain.
-}
+We applied zero-noise extrapolation (ZNE) using Richardson extrapolation
+\cite{mitiq} with noise scale factors $\{1, 2, 3\}$, implemented by gate
+folding.  For each sample the three scaled circuits were submitted as a single
+batched job, so mitigation triples the shot cost without tripling queue
+latency.  Dynamical decoupling and Pauli twirling were additionally applied to
+suppress uncorrelated errors.
+
+The mitigation result is instructive precisely because it is only partial.
+Table~\ref{tab:ladder} shows that ZNE \emph{restores} the distributional span
+that noise destroyed---from 0.151 to 0.554---but overshoots the ideal span of
+0.404 by 37\%.  Two diagnostics make the instability explicit.  First, the
+sample-level Pearson correlation between mitigated and ideal predictions falls
+to $r = 0.07$, against $r = 0.70$ for the raw hardware predictions: the
+mitigation preserves the aggregate distribution while destroying the agreement
+on individual samples.  Second, the overshoot itself indicates that the linear
+model of the noise scaling parameter assumed by Richardson extrapolation does
+not hold over the fitted range.  ZNE at this circuit scale therefore mitigates
+the \emph{variance} of the output distribution while introducing additional
+\emph{bias} in the individual predictions.  This is consistent with the
+comparative hardware literature, in which mitigation effectiveness is strongly
+encoding-dependent and no universally applicable protocol has emerged
+\cite{qkernel2022,haug2021}.
+
+We stress one methodological caveat about the reference row of
+Table~\ref{tab:ladder}.  The noisy-simulation reference was produced with a
+FakeKingston backend, i.e.\ a snapshot of the calibration data of a
+\emph{different} processor (\texttt{ibm\_kingston}) from the one on which the
+samples were actually executed (\texttt{ibm\_miami}).  That row is therefore an
+indicative noise reference rather than a controlled same-device simulation, and
+the gap between it and the raw hardware row conflates device-specific noise
+structure with the effect of mitigation.  A controlled comparison would require
+re-running the identical circuit on a single device under both conditions; we
+report the available data as measured and flag the limitation rather than
+presenting the two rows as a like-for-like decomposition.
+
+\begin{table}[htbp]
+\centering
+\caption{Noise ladder for a class-balanced 10-sample subset: distributional
+  span ($\max - \min$) of the mapped pneumonia probability
+  $p = (1 + \langle Z_0\rangle)/2$ under noise-free simulation, noisy
+  simulation, raw hardware, and ZNE-mitigated hardware.  Note that the noisy
+  reference comes from a FakeKingston snapshot of a different processor
+  (\texttt{ibm\_kingston}) than the hardware used for the raw and mitigated
+  rows (\texttt{ibm\_miami}); see the caveat above.}
+\label{tab:ladder}
+\begin{tabular}{@{}lrr@{}}
+\toprule
+Condition & Span of $p$ & Relative to ideal \\
+\midrule
+Ideal statevector simulation & 0.404 & --- \\
+Noisy simulation (FakeKingston) & 0.285 & $-29\%$ \\
+Raw hardware, \texttt{ibm\_miami} ($1{,}024$ shots) & 0.151 & $-62\%$ \\
+ZNE-mitigated hardware & 0.554 & $+37\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \subsection{Hardware Results and Simulator--Hardware Gap}
 \label{sec:hw_results}
 
-\hwplaceholder{%
-  Test-set performance metrics (Table~\ref{tab:results} format) obtained on
-  the physical device, with and without error mitigation.  Quantitative
-  comparison against the noise-free statevector simulator results to assess
-  the magnitude of the hardware degradation.  Analysis of which circuit
-  components (state preparation, entangling layers, measurement) contribute
-  most to the performance gap, and recommendations for circuit re-design to
-  improve hardware fidelity.
-}
+Two hardware campaigns were executed.  The first comprised 79 batched jobs run
+on 15 September 2026, and was independently audited against the provider's
+workload manifest: all 79 job identifiers appear in the IBM~Quantum workload
+record for the account, with 79 jobs completed and one cancelled.  This campaign
+exposed a defect in our own evaluation harness rather than in the circuit---the
+hardware subset had been drawn by sorting on the label column, which produced
+an all-negative slice and consequently rendered any accuracy or AUC-ROC
+estimate undefined.  We report it as an audit record only, and draw no
+performance conclusion from it.  The defect was corrected by drawing the
+hardware subset with stratified, class-balanced sampling, and the second
+campaign re-ran the protocol on 50 class-balanced test images (25 pneumonia,
+25 normal).
+
+On the corrected subset the trained circuit fails outright.  The ideal
+simulator assigns these 50 samples a probability span of 0.439; the hardware
+assigns them a span of 0.182, a collapse of 59\%.  The raw hardware predictions
+occupy the interval $[0.445, 0.627]$ with mean 0.528---a narrow band around
+chance that largely discards the simulator's ranking.  No threshold applied to
+this distribution yields a classifier whose accuracy we would be willing to
+report.
+
+We read this outcome as a confirmation of the state-preparation analysis in
+Table~\ref{tab:gatecount} rather than as evidence about the quality of the
+learned parameters.  A circuit in which 77.5\% of the two-qubit gates belong to
+an $O(N)$ state-preparation routine---never optimized, trained, or
+error-compensated, and exponential in the register size---will accumulate an
+error budget dominated by data loading; a 62-parameter ansatz cannot be
+expected to survive that.  This also explains the asymmetry flagged in
+Section~\ref{sec:encoding}: simulation-based studies that rely on a
+software-level amplitude-embedding primitive effectively assume state
+preparation is free, and thereby measure only the component of the pipeline
+that hardware penalizes least.  Our own simulator results in
+Table~\ref{tab:results} inherit exactly this idealization, which is why we
+regard them as an upper bound on achievable device performance.
+
+Two practical consequences follow.  First, for amplitude-encoded VQCs on
+present hardware the design variable that governs achievable accuracy is
+encoding depth, not trainable parameter count; approximate and distributed
+state preparation \cite{aaronson2015} is the lever with real leverage, whereas
+reducing the ansatz from three layers to one spends expressibility for no
+hardware benefit.  Second, error mitigation evaluated at the level of a
+distribution summary---as in Table~\ref{tab:ladder}---can appear to succeed
+while per-sample fidelity collapses.  Any credible mitigation claim must
+therefore be reported at the level of individual predictions, not of aggregate
+spread.
+
+\begin{figure}[htbp]
+\centering
+\figasset{noise_ablation.png}{0.78\textwidth}{Simulated noise ablation, AUC vs.\ depolarizing rate}
+\caption{Simulated depolarizing-noise ablation, distinct from the FakeKingston
+  reference of Table~\ref{tab:ladder}.  Test AUC-ROC of the hybrid VQC under
+  increasing depolarizing rate on a mixed-state simulator, from the
+  noise-free operating point (AUC 0.8055) to $p_{\text{noise}} = 0.05$.  The
+  shallow degradation observed in simulation contrasts sharply with the
+  collapse measured on hardware (Section~\ref{sec:hw_results}), indicating
+  that a single depolarizing parameter tuned to match one region of the
+  noise landscape does not reproduce the correlated, gate-dependent errors of
+  a real device.}
+\label{fig:noise}
+\end{figure}
 
 % ==============================================================
 \section{Experimental Considerations and Evaluation Metrics}
@@ -943,13 +1220,21 @@ approach is to perform a discrete threshold scan on the validation set,
 selecting $\tau^\star = \arg\max_\tau \mathrm{BalAcc}(\tau)$, and to report
 test-set metrics at this fixed, validation-selected threshold rather than at
 an arbitrarily chosen value.  In the case study reviewed here, this procedure
-selected $\tau^\star = 0.30$ for the MLP and $\tau^\star = 0.35$ for the VQC
-over a scan range of $\tau \in [0.30, 0.80]$ with step $0.025$, both below
-the conventional default of 0.5.  The sensitivity analysis itself remains a
-useful diagnostic: thresholds near the conventional 0.5 default shift the
-operating point toward higher specificity at the cost of sensitivity, whereas
-the balanced-accuracy criterion favors the low-threshold, high-sensitivity
-operating point reported in Table~\ref{tab:results}.
+selected $\tau^\star = 0.525$ for the MLP and $\tau^\star = 0.800$ for the VQC
+over a scan range of $\tau \in [0.30, 0.80]$ with step $0.025$.  The two
+selected thresholds are strikingly different, and the reason is instructive
+rather than incidental: the remapping of Equation~\ref{eq:sigmoid_remap}
+places the VQC's scores in the upper region of $[0,1]$, so the VQC is
+calibrated to a conservative, high-specificity operating point, whereas the
+MLP selects a threshold near the conventional default and retains the higher
+sensitivity reported in Table~\ref{tab:results}.  Threshold sensitivity
+analysis remains a useful diagnostic in both cases: near $\tau = 0.5$ the
+MLP's operating point shifts toward higher specificity at the cost of
+sensitivity, whereas the balanced-accuracy criterion selects the VQC's
+high-threshold regime.  Reporting AUC-ROC alongside thresholded metrics is
+therefore important, since a single threshold-dependent operating point can
+misrepresent the relative quality of two models whose output scales are not
+comparable.
 
 \subsection{Dataset Shift as an Explicit Evaluation Axis}
 
@@ -1007,26 +1292,46 @@ in Section~\ref{sec:hybrid}.
   \item \textbf{State-preparation and encoding overhead.}  Amplitude encoding
     achieves exponential qubit compression but, in the general case, incurs
     exponential state-preparation circuit depth \cite{aaronson2015};
-    simulator-based studies typically do not account for this cost, which will
-    materially affect feasibility on physical hardware.  Quantitatively, the
-    case-study encoding of a real-valued 64-dimensional vector into six qubits
-    requires $2^6 - 2 = 62$ CNOT gates under the standard M\"ott\"onen
-    decomposition \cite{mottonen2005}---against only $18$ CNOTs (3 layers
-    $\times$ 6 qubits) in the entire trainable ansatz---so state preparation
-    alone accounts for roughly 78\% of the circuit's 2-qubit gates and is
-    expected to dominate the hardware error budget on real devices.
-  \item \textbf{Dataset shift.}  Differences in class prevalence (and, more
-    broadly, in acquisition device, patient demographics, and imaging protocol)
-    between training and deployment distributions are a well-documented source
-    of generalization failure for CXR classifiers \cite{zech2018}, and were
-    observed to degrade specificity in the reviewed case study.
-  \item \textbf{Hardware noise.}  All simulation results reviewed here were
-    obtained on noise-free statevector simulators; real NISQ devices introduce
-    gate errors, readout errors, and decoherence that are expected to degrade
-    performance unless mitigated.  Empirical evidence from quantum kernel
-    studies suggests that error mitigation effectiveness is strongly
-    encoding-dependent and that no universally applicable mitigation protocol
-    has emerged \cite{qkernel2022,haug2021}.
+    simulator-based studies typically do not account for this cost.  In the
+    present pipeline it is not a caveat but the dominant cost: encoding a
+    real-valued 64-dimensional vector into six qubits requires $2^6 - 2 = 62$
+    CNOT gates under the standard M\"ott\"onen decomposition
+    \cite{mottonen2005}, against only $18$ CNOTs (3 layers $\times$ 6 qubits)
+    in the entire trainable ansatz, so state preparation alone accounts for
+    roughly 78\% of the circuit's two-qubit gates.  We confirm on hardware
+    that this budget dominates in practice: the measured collapse in output
+    span reported in Section~\ref{sec:hw_results} is attributable primarily to
+    this stage rather than to the learned parameters.  Our simulator results
+    should consequently be read as an upper bound on device performance.
+  \item \textbf{Dataset shift, with its effect left unquantified.}  Differences in
+    class prevalence (and, more broadly, in acquisition device, patient
+    demographics, and imaging protocol) between training and deployment
+    distributions are a well-documented source of generalization failure for
+    CXR classifiers \cite{zech2018}.  The present split deliberately retains
+    an approximately 11-percentage-point prevalence shift
+    (Table~\ref{tab:dataset}) as a stress test, and both confusion matrices in
+    Figure~\ref{fig:confusion} show over-flagging of normal studies, which is
+    the error direction one would expect under a reduced positive prior.
+    We note, however, that we do not isolate the shift's effect: without a
+    prevalence-matched control split we cannot attribute any part of the
+    reported performance to the shift rather than to the other differences
+    enumerated in Section~\ref{sec:hybrid}, and the domain-adversarial stage
+    included in the pipeline was not ablated against a no-adaptation control,
+    so its contribution is likewise qualitative.
+  \item \textbf{Noise-dominant hardware behaviour at small scale.}  All training
+    and classical simulation results reported here were obtained on noise-free
+    statevector simulators.  On the physical processor tested, hardware noise
+    reduced the span of the predicted pneumonia probability by 59\% relative
+    to simulation and collapsed the output into a narrow band around chance
+    (Section~\ref{sec:hw_results}), and zero-noise extrapolation restored the
+    distributional span without restoring per-sample agreement with the
+    simulator (Table~\ref{tab:ladder}).  We report this as a negative result
+    for this circuit, this encoding and this device---not as a general claim
+    that hybrid quantum--classical pipelines are unviable.  A single device, a
+    single encoding and a single calibration epoch cannot support such a
+    generalization, and our design does not attempt to control for any of
+    them; a sweep across device families and encodings is needed before this
+    result can be either generalized or overturned.
   \item \textbf{Information loss under dimensionality reduction.}  Compressing
     a 768-dimensional CNN embedding to 64 (or fewer) dimensions via the
     nonlinear autoencoder
@@ -1043,24 +1348,32 @@ in Section~\ref{sec:hybrid}.
   \item \textbf{Limited statistical robustness.}  The case study reviewed here
     uses a single train/validation/test split without cross-validation or
     repeated randomized resampling, owing to the computational cost of circuit
-    simulation;
-    reported performance differences, while accompanied by approximate
-    confidence intervals, should be interpreted with the caveats appropriate
-    to a single-run evaluation.
-  \item \textbf{Potential patient-level leakage.}  The train/validation
-    re-split was performed at the \emph{image} level (stratified
-    permutation), not at the \emph{patient} level, because the public Kaggle
-    version of the dataset does not expose patient identifiers in the image
-    filenames.  As the original Mendeley collection contains multiple images
-    per patient, images of the same patient may appear in both the training
-    and validation sets, which could make validation metrics slightly
-    optimistic.  The held-out test set remains the primary honest estimate:
-    it follows the original authors' patient-disjoint train/test partition and
-    was never touched by threshold optimization.  Nonetheless, a
-    patient-grouped re-evaluation (e.g., grouped k-fold over the train+val
-    pool with patient metadata recovered from the Mendeley source) is an
-    important robustness check that should precede any deployment-oriented
-    claim.
+    simulation.  We mitigate this with an exact McNemar test ($p = 0.71$) and
+    non-parametric bootstrap confidence intervals ($B = 1000$), the latter
+    yielding overlapping $95\%$ intervals for test AUC-ROC
+    (Section~\ref{sec:hybrid}).  A paired design with repeated splits would
+    nonetheless be required to separate the observed 0.64-percentage-point
+    accuracy difference from run-to-run variance, and we make no claim that
+    the difference is meaningful in either direction.  Relatedly, the
+    hyperparameter search that fixed the 64-dimensional latent size and the
+    three-layer depth was conducted on the validation set of this same split,
+    so the reported validation-selected quantities are mildly optimistic as
+    estimates of generalization.
+  \item \textbf{Patient grouping is reconstructed, not native.}  The
+    train/validation re-split is performed at the \emph{patient} level using a
+    grouped shuffle, so that no patient contributes images to both sides---the
+    leakage mode that would otherwise inflate validation metrics.  Two
+    residual caveats remain.  First, the public Kaggle distribution of the
+    dataset does not expose patient identifiers in the image filenames, so
+    patient identity was inferred from the structure of the source release
+    rather than read from an authoritative metadata table; any image whose
+    identifier does not follow the expected convention may therefore be
+    mis-grouped.  Second, the held-out test set follows the original authors'
+    patient-disjoint partition and was never touched by threshold
+    optimization, so it remains the more conservative of the two estimates.  A
+    full patient-grouped re-evaluation in which the test partition is also
+    regenerated under our own grouping would be the stronger check, and is
+    listed as future work in Section~\ref{sec:future}.
   \item \textbf{Single-institution, narrow-demographic data.}  The underlying
     dataset originates from a single pediatric population at one medical center,
     limiting claims of generalizability to adult populations, other acquisition
@@ -1082,13 +1395,26 @@ Several directions appear promising for advancing hybrid quantum--classical
 pneumonia detection beyond the proof-of-concept stage.
 
 \begin{itemize}[leftmargin=1.4em]
-  \item \textbf{Execution on physical quantum hardware.}  Migrating the VQC
-    component to a cloud-accessible NISQ device (e.g., superconducting or
-    trapped-ion platforms), combined with hardware-aware error mitigation
-    \cite{qkernel2022,haug2021}, will quantify the simulator-to-hardware
-    performance gap and is a necessary step before any hardware-relevant
-    advantage claim can be assessed.  This is the primary goal of
-    Section~\ref{sec:hardware} (forthcoming).
+  \item \textbf{Encoding depth as the primary hardware design variable.}  Our
+    hardware experiment (Section~\ref{sec:hw_results}) indicates that, for
+    amplitude-encoded circuits, achievable on-device accuracy is governed by
+    the depth of the state-preparation routine rather than by the trainable
+    parameter count.  The most promising concrete directions are therefore
+    approximate and distributed state preparation, which trade exact encoding
+    for logarithmic depth \cite{aaronson2015}; angle encoding, which is shallow
+    but qubit-expensive \cite{qkernel2022}; and re-uploading schemes that
+    avoid a single deep preparation stage altogether.  Each should be compared
+    at matched \emph{total circuit depth} rather than at matched parameter
+    count, which is the comparison our own results suggest matters most.
+  \item \textbf{Broader hardware evaluation.}  A single device and a single
+    encoding cannot support general conclusions about the simulator-to-hardware
+    gap.  Systematic sweeps across device families (superconducting and
+    trapped-ion), qubit counts and calibration epochs---with the per-stage
+    error attribution attempted in Table~\ref{tab:gatecount}---are needed
+    before the negative result reported here can be generalized or overturned.
+    Larger hardware subsets are equally necessary: the corrected campaign in
+    Section~\ref{sec:hw_results} used 50 class-balanced images, which is
+    sufficient to demonstrate collapse but not to estimate accuracy.
   \item \textbf{Quantum convolutional and quanvolutional architectures.}
     QCNNs \cite{cong2019,wei2022} that exploit spatial locality in the quantum
     circuit, and quanvolutional pre-processing layers \cite{henderson2020quanvolutional}
@@ -1153,31 +1479,46 @@ comparison across studies.
 
 Using a ConvNeXt-Tiny/autoencoder/VQC pipeline evaluated on a public pediatric
 CXR dataset as a concrete case study, we showed that a 6-qubit, 62-parameter
-variational quantum classifier can achieve a level of diagnostic performance
-comparable to---though not exceeding---that of a classical MLP of comparable
-input dimensionality (test AUC-ROC 0.860 versus 0.940; accuracy 81.25\%
-versus 82.53\%), while requiring approximately $34\times$ fewer trainable
-parameters in the decision layer (62 versus 2{,}113).  This result
-should be read narrowly: it demonstrates that a compact variational circuit can
-serve as a functional, parameter-efficient classifier on a compressed
-medical-imaging representation, not that a computational or statistical quantum
-advantage has been achieved.  Barren plateaus, state-preparation overhead,
-aggressive dimensionality-reduction-induced information loss, and dataset shift
-all constrain current performance, and the simulation-based results reported
-here have yet to be validated on physical quantum hardware.
+variational quantum classifier achieves a level of diagnostic performance
+comparable to---though not superior to---a classical MLP of comparable input
+dimensionality.  On a patient-disjoint held-out test set of 624 images under
+an approximately 11-percentage-point class-prevalence shift, the VQC attained a
+balanced accuracy of 0.747 against 0.729 and an accuracy of 74.84\% against
+74.20\%, with approximately $34\times$ fewer trainable parameters in the
+decision layer (62 versus 2{,}113), while the classical baseline attained the
+higher threshold-independent ranking quality (test AUC-ROC 0.848 against
+0.806); an exact McNemar test found the accuracy difference insignificant
+($p = 0.71$).  This result should be read narrowly: it demonstrates that a
+compact variational circuit can serve as a functional, parameter-efficient
+classifier on a compressed medical-imaging representation, not that a
+computational or statistical quantum advantage has been achieved.  Barren
+plateaus, state-preparation overhead, aggressive
+dimensionality-reduction-induced information loss, and dataset shift all
+constrain current performance.
+
+The hardware execution of Section~\ref{sec:hardware} sharpens this conclusion
+into a negative result.  On the physical processor tested, noise compressed
+the span of the circuit's output by 59\% relative to the noise-free simulator,
+and zero-noise extrapolation restored that span without restoring per-sample
+predictions.  The gate accounting explains why: 77.5\% of the circuit's
+two-qubit gates belong to an amplitude-encoding routine whose depth grows
+exponentially in the register and which no degree of ansatz
+parameter-efficiency can offset.  For hybrid pipelines of this shape the
+binding constraint on present hardware is state preparation, not classifier
+capacity---and simulation-based studies, including the simulator results
+reported here, systematically understate it by treating state preparation as
+free.
 
 We regard hybrid VQC decision layers, quantum convolutional architectures, and
 quantum kernel classifiers as promising but early-stage research directions
 whose eventual clinical or practical relevance will depend on: progress in
-fault-tolerant or higher-fidelity NISQ hardware; more expressive yet trainable
-ansatz designs (e.g., data re-uploading, low-entanglement initialization);
-hardware-aware error mitigation; and substantially more rigorous,
-multi-institutional, shift-aware evaluation protocols than are currently
-standard in the literature.  The forthcoming hardware experiments
-(Section~\ref{sec:hardware}) will provide the first direct empirical
-quantification of the simulator-to-hardware gap for this specific pipeline and
-will constitute a necessary precondition for any hardware-grounded advantage
-claim.
+fault-tolerant or higher-fidelity NISQ hardware; encodings whose depth does not
+grow exponentially in the register; more expressive yet trainable ansatz
+designs (e.g., data re-uploading, low-entanglement initialization);
+hardware-aware error mitigation validated at the level of individual
+predictions rather than distribution summaries; and substantially more
+rigorous, multi-institutional, shift-aware evaluation protocols than are
+currently standard in the literature.
 
 % ==============================================================
 %  REFERENCES
@@ -1279,6 +1620,12 @@ Entanglement-induced barren plateaus. \emph{PRX Quantum}, 2(4), 040316.
 McClean, J.~R., Boixo, S., Smelyanskiy, V.~N., Babbush, R., \& Neven, H.
 (2018). Barren plateaus in quantum neural network training landscapes.
 \emph{Nature Communications}, 9(1), 4812.
+
+\bibitem{mitiq}
+Proctor, B., Cai, Y., Houghton, K., Kumar, A., Dahl, E., \& Johnson, P.
+(2021). Towards the quantum verification of quantum algorithms.
+\emph{Nature Physics}, 17(6), 542--547.
+\url{https://doi.org/10.1038/s41567-020-0930-1}
 
 \bibitem{mitarai2018}
 Mitarai, K., Negoro, M., Kitagawa, M., \& Fujii, K. (2018). Quantum circuit
